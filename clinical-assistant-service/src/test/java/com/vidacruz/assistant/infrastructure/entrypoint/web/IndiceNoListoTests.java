@@ -50,7 +50,7 @@ class IndiceNoListoTests extends AbstractIntegrationTest {
 				.expectHeader().contentType(MediaType.APPLICATION_PROBLEM_JSON)
 				.expectHeader().valueEquals("Retry-After", "3")
 				.expectBody()
-				.jsonPath("$.type").isEqualTo("urn:vidacruz:asistente:problema:indice-no-disponible")
+				.jsonPath("$.type").isEqualTo("https://vidacruz.example/errores/indice-no-disponible")
 				.jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("se está preparando"));
 		anonimo().get().uri("/actuator/health/readiness").exchange().expectStatus().isEqualTo(503)
 				.expectBody().jsonPath("$.status").isEqualTo("DOWN");

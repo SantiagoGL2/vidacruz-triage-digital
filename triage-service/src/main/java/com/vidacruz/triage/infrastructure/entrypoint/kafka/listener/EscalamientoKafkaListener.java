@@ -7,6 +7,7 @@ import com.vidacruz.triage.application.context.ContextoCorrelacion;
 import com.vidacruz.triage.application.port.in.NotificarEscalamientoUseCase;
 import com.vidacruz.triage.domain.event.EventoTriaje;
 import com.vidacruz.triage.domain.model.enums.NivelTriaje;
+import com.vidacruz.triage.domain.model.enums.TipoEventoClinico;
 import com.vidacruz.triage.infrastructure.config.TriageAlertasProperties;
 import com.vidacruz.triage.infrastructure.entrypoint.kafka.exception.EventoInvalidoException;
 import java.time.Duration;
@@ -26,7 +27,8 @@ import org.springframework.stereotype.Component;
 @Component
 class EscalamientoKafkaListener {
 
-	static final String TIPO_ESCALADO = "paciente_escalado";
+	/** Unico tipo que procesa este consumidor (valor serializado del enum de dominio). */
+	static final String TIPO_ESCALADO = TipoEventoClinico.PACIENTE_ESCALADO.nombreEvento();
 
 	private final NotificarEscalamientoUseCase notificar;
 	private final ObjectMapper objectMapper;
@@ -72,7 +74,7 @@ class EscalamientoKafkaListener {
 	private NotificarEscalamientoComando comando(EventoTriaje evento) {
 		var p = evento.payload();
 		if (p.pacienteId() == null || p.nivel() == null || p.fechaRegistro() == null) {
-			throw new EventoInvalidoException("paciente_escalado sin pacienteId, nivel o fechaRegistro");
+			throw new EventoInvalidoException(TIPO_ESCALADO + " sin pacienteId, nivel o fechaRegistro");
 		}
 		try {
 			return new NotificarEscalamientoComando(evento.eventId(), p.pacienteId(), NivelTriaje.valueOf(p.nivel()),

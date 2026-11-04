@@ -4,35 +4,68 @@ import com.vidacruz.triage.infrastructure.entrypoint.web.filter.CorrelationIdWeb
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
-import org.springframework.http.HttpStatus;
+import java.util.Locale;
+import org.springframework.context.MessageSource;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
+import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 
-/** Fabrica del formato unico de error (RFC 7807): type, title, status, detail, instance + correlationId/timestamp. */
-final class Problemas {
-
-	private Problemas() {
-	}
+/**
+ * Fabrica del formato unico de error (RFC 7807): type, title, status, detail, instance + correlationId/timestamp. Toma el
+ * status y el type del catalogo {@link ErrorApi} y los textos de {@code messages.properties} (MessageSource), en el idioma de
+ * la peticion (Accept-Language) con el espanol como idioma por defecto.
+ */
+@Component
+public class Problemas {
 
 	/** Un campo invalido: nombre, valor recibido y por que se rechazo. */
-	record ErrorCampo(String campo, Object valor, String mensaje) {
+	public record ErrorCampo(String campo, Object valor, String mensaje) {
 	}
 
-	static ProblemDetail crear(HttpStatusCode status, String codigo, String titulo, String detalle,
-			ServerWebExchange exchange) {
-		ProblemDetail problema = ProblemDetail.forStatusAndDetail(status, detalle);
-		problema.setType(URI.create("urn:vidacruz:triage:problema:" + codigo));
-		problema.setTitle(titulo);
-		problema.setInstance(URI.create(exchange.getRequest().getPath().value()));
-		problema.setProperty("correlationId", CorrelationIdWebFilter.de(exchange));
-		problema.setProperty("timestamp", Instant.now());
+	private final MessageSource mensajes;
+
+	Problemas(MessageSource mensajes) {
+		this.mensajes = mensajes;
+	}
+
+	/** Error del catalogo con su mensaje por defecto ({@code error.<codigo>.mensaje}) y los argumentos dados. */
+	public ProblemDetail crear(ErrorApi error, ServerWebExchange exchange, Object... argumentos) {
+		return crearConMensaje(error, exchange, error.claveMensaje(), argumentos);
+	}
+
+	/** Error del catalogo con otra clave de mensaje (una variante del mismo error, p. ej. «ya esta en ese estado»). */
+	public ProblemDetail crearConMensaje(ErrorApi error, ServerWebExchange exchange, String claveMensaje, Object... argumentos) {
+		return construir(error.status(), error.tipo(), texto(error.claveTitulo(), exchange),
+				texto(claveMensaje, exchange, argumentos), exchange);
+	}
+
+	/** 400 de validacion con la lista de campos invalidos. */
+	public ProblemDetail validacion(List<ErrorCampo> errores, String campos, ServerWebExchange exchange) {
+		ProblemDetail problema = crear(ErrorApi.VALIDACION, exchange, String.valueOf(errores.size()), campos);
+		problema.setProperty(PropiedadesProblema.ERRORES, errores);
 		return problema;
 	}
 
-	static ProblemDetail validacion(List<ErrorCampo> errores, String detalle, ServerWebExchange exchange) {
-		ProblemDetail problema = crear(HttpStatus.BAD_REQUEST, "validacion", "Datos invalidos", detalle, exchange);
-		problema.setProperty("errores", errores);
+	/** Errores HTTP genericos del framework: conservan su status; type {@code <URI_BASE>http-<status>}. */
+	public ProblemDetail http(HttpStatusCode status, String titulo, String detalle, ServerWebExchange exchange) {
+		return construir(status, URI.create(ErrorApi.URI_BASE + "http-" + status.value()), titulo, detalle, exchange);
+	}
+
+	/** Texto localizado (clave de messages.properties) en el idioma de la peticion. */
+	public String texto(String clave, ServerWebExchange exchange, Object... argumentos) {
+		Locale locale = exchange.getLocaleContext().getLocale();
+		return mensajes.getMessage(clave, argumentos, locale != null ? locale : Locale.getDefault());
+	}
+
+	private static ProblemDetail construir(HttpStatusCode status, URI tipo, String titulo, String detalle,
+			ServerWebExchange exchange) {
+		ProblemDetail problema = ProblemDetail.forStatusAndDetail(status, detalle);
+		problema.setType(tipo);
+		problema.setTitle(titulo);
+		problema.setInstance(URI.create(exchange.getRequest().getPath().value()));
+		problema.setProperty(PropiedadesProblema.CORRELATION_ID, CorrelationIdWebFilter.de(exchange));
+		problema.setProperty(PropiedadesProblema.TIMESTAMP, Instant.now());
 		return problema;
 	}
 

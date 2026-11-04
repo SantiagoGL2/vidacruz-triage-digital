@@ -18,7 +18,7 @@ class IndiceProtocolosTests extends AbstractIntegrationTest {
 			api().post().uri("/asistente/consulta").contentType(MediaType.APPLICATION_JSON)
 					.bodyValue(Map.of("pregunta", "¿Cuáles son las medidas iniciales ante una crisis hipertensiva?")).exchange()
 					.expectStatus().isEqualTo(503).expectBody()
-					.jsonPath("$.type").isEqualTo("urn:vidacruz:asistente:problema:indice-no-disponible");
+					.jsonPath("$.type").isEqualTo("https://vidacruz.example/errores/indice-no-disponible");
 			anonimo().get().uri("/actuator/health/readiness").exchange().expectStatus().isEqualTo(503);
 			anonimo().get().uri("/actuator/health/liveness").exchange().expectStatus().isOk();
 			api().get().uri("/actuator/health").exchange().expectStatus().isEqualTo(503).expectBody()

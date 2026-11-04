@@ -3,6 +3,7 @@ package com.vidacruz.triage.infrastructure.drivenadapter.webhook.adapter;
 import com.vidacruz.triage.domain.model.Alerta;
 import com.vidacruz.triage.domain.port.out.NotificadorAlertasPort;
 import com.vidacruz.triage.infrastructure.config.TriageAlertasProperties;
+import com.vidacruz.triage.infrastructure.drivenadapter.observability.NombresMetricas;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
@@ -70,9 +71,9 @@ class WebhookAlertaAdapter implements NotificadorAlertasPort {
 						.timeout(config.timeout()))
 				.transformDeferred(CircuitBreakerOperator.of(circuitBreaker))
 				.transformDeferred(RetryOperator.of(retry))
-				.doOnSuccess(r -> registry.counter("triage.alertas.emitidas", "canal", "webhook").increment())
+				.doOnSuccess(r -> registry.counter(NombresMetricas.ALERTAS_EMITIDAS, NombresMetricas.TAG_CANAL, NombresMetricas.CANAL_WEBHOOK).increment())
 				.onErrorResume(e -> {
-					registry.counter("triage.alertas.fallos", "canal", "webhook").increment();
+					registry.counter(NombresMetricas.ALERTAS_FALLOS, NombresMetricas.TAG_CANAL, NombresMetricas.CANAL_WEBHOOK).increment();
 					log.warn("Webhook de alertas fallo para paciente={}: {}", alerta.pacienteId(), e.toString());
 					return Mono.empty();
 				})

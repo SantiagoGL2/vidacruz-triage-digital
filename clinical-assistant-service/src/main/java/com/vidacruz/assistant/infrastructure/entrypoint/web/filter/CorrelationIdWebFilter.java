@@ -1,5 +1,6 @@
 package com.vidacruz.assistant.infrastructure.entrypoint.web.filter;
 
+import com.vidacruz.assistant.infrastructure.entrypoint.web.CabecerasHttp;
 import com.vidacruz.assistant.application.context.ContextoCorrelacion;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -19,8 +20,6 @@ import reactor.core.publisher.Mono;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class CorrelationIdWebFilter implements WebFilter {
 
-	public static final String HEADER = "X-Correlation-Id";
-
 	/** Atributo del exchange, para quien necesite el id fuera del Context (handlers de error, entry point). */
 	public static final String ATRIBUTO = CorrelationIdWebFilter.class.getName() + ".id";
 
@@ -29,10 +28,10 @@ public class CorrelationIdWebFilter implements WebFilter {
 
 	@Override
 	public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
-		String recibido = exchange.getRequest().getHeaders().getFirst(HEADER);
+		String recibido = exchange.getRequest().getHeaders().getFirst(CabecerasHttp.CORRELATION_ID);
 		String id = recibido != null && VALIDO.matcher(recibido).matches() ? recibido : UUID.randomUUID().toString();
 		exchange.getAttributes().put(ATRIBUTO, id);
-		exchange.getResponse().getHeaders().set(HEADER, id);
+		exchange.getResponse().getHeaders().set(CabecerasHttp.CORRELATION_ID, id);
 		return chain.filter(exchange).contextWrite(ctx -> ctx.put(ContextoCorrelacion.CLAVE, id));
 	}
 

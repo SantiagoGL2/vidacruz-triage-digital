@@ -36,7 +36,7 @@ class EstadoUrgenciasApiTests extends AbstractIntegrationTest {
 				.expectHeader().contentType(MediaType.APPLICATION_PROBLEM_JSON)
 				.expectBody()
 				.jsonPath("$.status").isEqualTo(401)
-				.jsonPath("$.type").isEqualTo("urn:vidacruz:asistente:problema:no-autenticado")
+				.jsonPath("$.type").isEqualTo("https://vidacruz.example/errores/no-autenticado")
 				.jsonPath("$.correlationId").exists();
 	}
 
@@ -95,7 +95,7 @@ class EstadoUrgenciasApiTests extends AbstractIntegrationTest {
 					.expectHeader().exists("Retry-After")
 					.expectBody()
 					.jsonPath("$.status").isEqualTo(503)
-					.jsonPath("$.type").isEqualTo("urn:vidacruz:asistente:problema:estado-no-disponible")
+					.jsonPath("$.type").isEqualTo("https://vidacruz.example/errores/estado-no-disponible")
 					.jsonPath("$.detail").value(containsString("Redis"))
 					.jsonPath("$.correlationId").exists();
 		}

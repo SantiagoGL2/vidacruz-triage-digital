@@ -1,5 +1,6 @@
 package com.vidacruz.assistant.infrastructure.entrypoint.kafka.listener;
 
+import com.vidacruz.assistant.infrastructure.entrypoint.kafka.CabecerasKafka;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.vidacruz.assistant.application.command.AplicarEventoComando;
 import com.vidacruz.assistant.application.port.in.AplicarEventoClinicoUseCase;
@@ -34,8 +35,6 @@ import org.springframework.stereotype.Component;
 @Component
 class EventosTriajeKafkaListener {
 
-	static final String HEADER_CORRELATION = "correlationId";
-
 	/** Solo caracteres seguros: el valor termina en logs (evita inyeccion de lineas). */
 	private static final Pattern CORRELACION_VALIDA = Pattern.compile("[A-Za-z0-9._-]{1,64}");
 
@@ -68,7 +67,7 @@ class EventosTriajeKafkaListener {
 
 	/** El header del mensaje manda (lo pone el publicador del outbox); si falta, el del envelope. */
 	private static String correlationId(ConsumerRecord<String, EventoTriajeMensaje> registro, EventoTriajeMensaje evento) {
-		Header header = registro.headers().lastHeader(HEADER_CORRELATION);
+		Header header = registro.headers().lastHeader(CabecerasKafka.CORRELATION_ID);
 		if (header != null && header.value() != null) {
 			String valor = new String(header.value(), StandardCharsets.UTF_8);
 			if (CORRELACION_VALIDA.matcher(valor).matches()) {

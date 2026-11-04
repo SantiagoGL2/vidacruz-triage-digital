@@ -3,6 +3,8 @@ package com.vidacruz.triage.infrastructure.entrypoint.web.dto.response;
 import com.vidacruz.triage.application.result.PacienteConsultado;
 import com.vidacruz.triage.domain.model.Paciente;
 import com.vidacruz.triage.domain.model.SignosVitales;
+import com.vidacruz.triage.infrastructure.entrypoint.web.controller.doc.EjemplosApi;
+import com.vidacruz.triage.infrastructure.entrypoint.web.dto.ValoresApi;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Duration;
 import java.time.Instant;
@@ -11,22 +13,22 @@ import java.util.UUID;
 /** Vista completa del paciente (GET y respuesta del PATCH). */
 @Schema(description = "Datos completos del paciente, su estado actual y el tiempo en ese estado")
 public record PacienteResponse(
-		@Schema(description = "Identificador del paciente", example = "e62f5bb0-848c-4343-9887-19cc8fcf3a0a") UUID id,
+		@Schema(description = "Identificador del paciente", example = EjemplosApi.ID_PACIENTE) UUID id,
 		@Schema(description = "Nombre completo", example = "Carlos Andrés Pérez") String nombreCompleto,
 		@Schema(description = "Edad en años", example = "58", minimum = "0", maximum = "120") int edad,
 		SignosVitalesResponse signosVitales,
 		@Schema(description = "Queja principal", example = "Dolor torácico") String quejaPrincipal,
-		@Schema(description = "Nivel de triaje (RN-01)", example = "CRITICO",
-				allowableValues = {"CRITICO", "URGENTE", "URGENTE_2", "NO_URGENTE", "NO_URGENTE_2"}) String nivel,
+		@Schema(description = "Nivel de triaje (RN-01)", example = ValoresApi.CRITICO,
+				allowableValues = {ValoresApi.CRITICO, ValoresApi.URGENTE, ValoresApi.URGENTE_2, ValoresApi.NO_URGENTE, ValoresApi.NO_URGENTE_2}) String nivel,
 		@Schema(description = "Nivel numérico (1 = más grave)", example = "1", minimum = "1", maximum = "5") int nivelNumero,
 		@Schema(description = "SLA en minutos congelado al registrar (RN-02)", example = "5") int slaMinutos,
-		@Schema(description = "Estado clínico actual", example = "EN_CONSULTA",
-				allowableValues = {"REGISTRADO", "EN_CONSULTA", "ALTA"}) String estado,
+		@Schema(description = "Estado clínico actual", example = ValoresApi.EN_CONSULTA,
+				allowableValues = {ValoresApi.REGISTRADO, ValoresApi.EN_CONSULTA, ValoresApi.ALTA}) String estado,
 		@Schema(description = "true si superó su SLA sin entrar a consulta y fue escalado (RF-03); persistente", example = "false") boolean escalado,
 		@Schema(description = "Instante del escalamiento; null si no fue escalado", nullable = true) Instant fechaEscalamiento,
-		@Schema(description = "Instante del registro", example = "2026-11-04T15:17:57.285937Z") Instant fechaRegistro,
+		@Schema(description = "Instante del registro", example = EjemplosApi.FECHA_REGISTRO) Instant fechaRegistro,
 		@Schema(description = "Instante de la primera entrada a consulta; null si aún no entró", nullable = true) Instant fechaPrimeraConsulta,
-		@Schema(description = "Instante del último cambio de estado", example = "2026-11-04T15:21:10.402118Z") Instant fechaUltimoCambioEstado,
+		@Schema(description = "Instante del último cambio de estado", example = EjemplosApi.FECHA_PRIMERA_CONSULTA) Instant fechaUltimoCambioEstado,
 		@Schema(description = "Segundos transcurridos en el estado actual", example = "0") long tiempoEnEstadoSegundos,
 		@Schema(description = "Minutos enteros transcurridos en el estado actual", example = "0") long tiempoEnEstadoMinutos) {
 

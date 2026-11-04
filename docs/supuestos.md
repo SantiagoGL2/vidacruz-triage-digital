@@ -61,7 +61,7 @@ Decisiones tomadas donde el enunciado (`docs/enunciado.md`) es ambiguo. Se ampl�
 34. **Respuesta del POST:** `id`, `nivel` (nombre), `nivelNumero`, `slaMinutos`, `estado`, `fechaRegistro` (ISO 8601 UTC) mas `Location`. El enunciado dice «nivel clasificado»; se devuelven nombre y numero.
 35. **Respuesta del PATCH:** 200 con la misma vista completa que el GET (el tiempo en el estado nuevo es 0 s).
 36. **GET:** `tiempoEnEstadoSegundos` y `tiempoEnEstadoMinutos` (este ultimo truncado), calculados con el `Clock` desde `fechaUltimoCambioEstado`. El escalamiento no reinicia ese tiempo (supuesto 12).
-37. **Formato de error unico (RFC 7807, `application/problem+json`):** `type` (`urn:vidacruz:triage:problema:<codigo>`), `title`, `status`, `detail`, `instance`, `correlationId`, `timestamp`; el 400 de validacion anade `errores: [{campo, valor, mensaje}]` y el 409 de transicion `estadoActual`/`estadoSolicitado`. El 500 nunca incluye la excepcion ni el stacktrace; van al log con el `correlationId`.
+37. **Formato de error unico (RFC 7807, `application/problem+json`):** `type` (`https://vidacruz.example/errores/<codigo>`), `title`, `status`, `detail`, `instance`, `correlationId`, `timestamp`; el 400 de validacion anade `errores: [{campo, valor, mensaje}]` y el 409 de transicion `estadoActual`/`estadoSolicitado`. El 500 nunca incluye la excepcion ni el stacktrace; van al log con el `correlationId`.
 38. **Las rutas inexistentes, 405 y 415** tambien salen como ProblemDetail con su status original.
 39. **Un UUID mal formado en la ruta es un 400** (campo `id`), no un 404.
 

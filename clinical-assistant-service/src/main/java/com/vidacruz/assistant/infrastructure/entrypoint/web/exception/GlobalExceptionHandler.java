@@ -23,25 +23,23 @@ import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.ServerWebInputException;
 
 /**
- * Traduce excepciones a ProblemDetail (RFC 7807) con cuerpo estable. Al cliente nunca se le entrega un stacktrace
- * ni el mensaje de una excepcion inesperada: eso solo va al log, con el correlationId.
+ * Traduce excepciones a ProblemDetail (RFC 7807) con cuerpo estable. Los errores salen del catalogo {@link ErrorApi} y sus
+ * textos de messages.properties. Al cliente nunca se le entrega un stacktrace ni el mensaje de una excepcion inesperada:
+ * eso solo va al log, con el correlationId.
  */
 @Slf4j
 @RestControllerAdvice
 class GlobalExceptionHandler {
 
-	/** Mensaje del modo degradado de la consulta (proveedor de IA caido). */
-	static final String MENSAJE_DEGRADADO =
-			"El asistente clínico no está disponible temporalmente; consulte los protocolos impresos";
-
-	static final String MENSAJE_INDICE =
-			"El asistente clínico se está preparando (indexando los protocolos); reintente en unos segundos. "
-					+ "Mientras tanto, consulte los protocolos impresos";
+	/** Segundos de Retry-After cuando Redis no responde. */
+	private static final long REINTENTO_ESTADO_SEGUNDOS = 5;
 
 	private final AsistenteRagProperties rag;
+	private final Problemas problemas;
 
-	GlobalExceptionHandler(AsistenteRagProperties rag) {
+	GlobalExceptionHandler(AsistenteRagProperties rag, Problemas problemas) {
 		this.rag = rag;
+		this.problemas = problemas;
 	}
 
 	// ------------------------------------------------------------------ modo degradado (503)
@@ -49,18 +47,15 @@ class GlobalExceptionHandler {
 	/** El proveedor de IA (chat o embeddings) no responde: circuito abierto, timeout, reintentos agotados... */
 	@ExceptionHandler(AsistenteNoDisponibleException.class)
 	ResponseEntity<ProblemDetail> proveedorNoDisponible(AsistenteNoDisponibleException ex, ServerWebExchange exchange) {
-		ProblemDetail problema = Problemas.crear(HttpStatus.SERVICE_UNAVAILABLE, "asistente-no-disponible",
-				"Asistente clínico no disponible", MENSAJE_DEGRADADO, exchange);
-		problema.setProperty("operacion", ex.operacion());
+		ProblemDetail problema = problemas.crear(ErrorApi.ASISTENTE_NO_DISPONIBLE, exchange);
+		problema.setProperty(PropiedadesProblema.OPERACION, ex.operacion());
 		return degradado(problema, rag.retryAfter().proveedor().toSeconds());
 	}
 
 	/** El indice de protocolos aun no esta listo (primera indexacion en curso o fallando). */
 	@ExceptionHandler(IndiceNoDisponibleException.class)
 	ResponseEntity<ProblemDetail> indiceNoDisponible(IndiceNoDisponibleException ex, ServerWebExchange exchange) {
-		ProblemDetail problema = Problemas.crear(HttpStatus.SERVICE_UNAVAILABLE, "indice-no-disponible",
-				"Índice de protocolos no disponible", MENSAJE_INDICE, exchange);
-		return degradado(problema, rag.retryAfter().indice().toSeconds());
+		return degradado(problemas.crear(ErrorApi.INDICE_NO_DISPONIBLE, exchange), rag.retryAfter().indice().toSeconds());
 	}
 
 	/** Redis no responde: modo degradado explicito, no un 500. */
@@ -68,11 +63,7 @@ class GlobalExceptionHandler {
 	ResponseEntity<ProblemDetail> estadoNoDisponible(EstadoUrgenciasNoDisponibleException ex, ServerWebExchange exchange) {
 		log.warn("Vista de urgencias no disponible correlationId={}: {}", CorrelationIdWebFilter.de(exchange),
 				ex.getMessage());
-		ProblemDetail problema = Problemas.crear(HttpStatus.SERVICE_UNAVAILABLE, "estado-no-disponible",
-				"Estado de urgencias no disponible",
-				"La vista de urgencias no esta disponible temporalmente (el almacen Redis no responde). "
-						+ "Reintenta en unos segundos.", exchange);
-		return degradado(problema, 5);
+		return degradado(problemas.crear(ErrorApi.ESTADO_NO_DISPONIBLE, exchange), REINTENTO_ESTADO_SEGUNDOS);
 	}
 
 	private static ResponseEntity<ProblemDetail> degradado(ProblemDetail problema, long reintentarEnSegundos) {
@@ -82,12 +73,12 @@ class GlobalExceptionHandler {
 
 	// ------------------------------------------------------------------ entrada invalida (400)
 
-	/** Bean Validation del DTO. */
+	/** Bean Validation del DTO. El mensaje de cada campo ya viene resuelto desde messages.properties. */
 	@ExceptionHandler(WebExchangeBindException.class)
 	ProblemDetail dtoInvalido(WebExchangeBindException ex, ServerWebExchange exchange) {
 		List<ErrorCampo> errores = ex.getFieldErrors().stream()
 				.map(e -> new ErrorCampo(e.getField(), e.getRejectedValue(),
-						e.getDefaultMessage() != null ? e.getDefaultMessage() : "valor invalido"))
+						e.getDefaultMessage() != null ? e.getDefaultMessage() : problemas.texto("campo.invalido", exchange, e.getCode())))
 				.toList();
 		return validacion(errores, exchange);
 	}
@@ -100,21 +91,19 @@ class GlobalExceptionHandler {
 				String campo = mapping.getPath().stream()
 						.map(ref -> ref.getFieldName() != null ? ref.getFieldName() : "[" + ref.getIndex() + "]")
 						.collect(Collectors.joining("."));
-				return validacion(List.of(new ErrorCampo(campo.isEmpty() ? "(cuerpo)" : campo, null,
-						"tipo o valor invalido")), exchange);
+				return validacion(List.of(new ErrorCampo(campo.isEmpty() ? problemas.texto("campo.cuerpo", exchange) : campo,
+						null, problemas.texto("campo.tipo-invalido", exchange))), exchange);
 			}
 			if (t instanceof JsonProcessingException) {
-				return Problemas.crear(HttpStatus.BAD_REQUEST, "json-malformado", "JSON malformado",
-						"El cuerpo no es un JSON valido", exchange);
+				return problemas.crear(ErrorApi.JSON_MALFORMADO, exchange);
 			}
 		}
-		return Problemas.crear(HttpStatus.BAD_REQUEST, "solicitud-invalida", "Solicitud invalida",
-				"La solicitud no se pudo interpretar (cuerpo ausente o ilegible)", exchange);
+		return problemas.crear(ErrorApi.SOLICITUD_INVALIDA, exchange);
 	}
 
-	private static ProblemDetail validacion(List<ErrorCampo> errores, ServerWebExchange exchange) {
+	private ProblemDetail validacion(List<ErrorCampo> errores, ServerWebExchange exchange) {
 		String campos = errores.stream().map(ErrorCampo::campo).distinct().collect(Collectors.joining(", "));
-		return Problemas.validacion(errores, "Hay %d dato(s) invalido(s): %s".formatted(errores.size(), campos), exchange);
+		return problemas.validacion(errores, campos, exchange);
 	}
 
 	// ------------------------------------------------------------------ resto
@@ -123,17 +112,15 @@ class GlobalExceptionHandler {
 	@ExceptionHandler(ResponseStatusException.class)
 	ProblemDetail errorHttp(ResponseStatusException ex, ServerWebExchange exchange) {
 		HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
-		String titulo = status != null ? status.getReasonPhrase() : "Error";
-		return Problemas.crear(ex.getStatusCode(), "http-" + ex.getStatusCode().value(), titulo,
-				ex.getReason() != null ? ex.getReason() : titulo, exchange);
+		String titulo = status != null ? status.getReasonPhrase() : problemas.texto("error.http.titulo", exchange);
+		return problemas.http(ex.getStatusCode(), titulo, ex.getReason() != null ? ex.getReason() : titulo, exchange);
 	}
 
 	@ExceptionHandler(Exception.class)
 	ProblemDetail inesperado(Exception ex, ServerWebExchange exchange) {
 		log.error("Error no controlado en {} {} correlationId={}", exchange.getRequest().getMethod(),
 				exchange.getRequest().getPath(), CorrelationIdWebFilter.de(exchange), ex);
-		return Problemas.crear(HttpStatus.INTERNAL_SERVER_ERROR, "interno", "Error interno",
-				"Ocurrio un error interno. Reporta el correlationId al equipo de soporte.", exchange);
+		return problemas.crear(ErrorApi.ERROR_INTERNO, exchange);
 	}
 
 }

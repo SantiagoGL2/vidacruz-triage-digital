@@ -19,28 +19,28 @@ class MicrometerMetricasAdapter implements MetricasPort {
 
 	MicrometerMetricasAdapter(MeterRegistry registry) {
 		this.registry = registry;
-		Gauge.builder("triage.outbox.pendientes", pendientes, AtomicLong::get)
+		Gauge.builder(NombresMetricas.OUTBOX_PENDIENTES, pendientes, AtomicLong::get)
 				.description("Eventos del outbox sin publicar (con intentos disponibles)").register(registry);
 	}
 
 	@Override
 	public void pacienteClasificado(NivelTriaje nivel) {
-		registry.counter("triage.pacientes.clasificados", "nivel", nivel.name()).increment();
+		registry.counter(NombresMetricas.PACIENTES_CLASIFICADOS, NombresMetricas.TAG_NIVEL, nivel.name()).increment();
 	}
 
 	@Override
 	public void pacienteEscalado(NivelTriaje nivel) {
-		registry.counter("triage.pacientes.escalados", "nivel", nivel.name()).increment();
+		registry.counter(NombresMetricas.PACIENTES_ESCALADOS, NombresMetricas.TAG_NIVEL, nivel.name()).increment();
 	}
 
 	@Override
 	public void eventoPublicado() {
-		registry.counter("triage.outbox.publicados").increment();
+		registry.counter(NombresMetricas.OUTBOX_PUBLICADOS).increment();
 	}
 
 	@Override
 	public void fallaPublicacion() {
-		registry.counter("triage.outbox.fallos").increment();
+		registry.counter(NombresMetricas.OUTBOX_FALLOS).increment();
 	}
 
 	@Override

@@ -1,6 +1,7 @@
 package com.vidacruz.triage.infrastructure.config.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vidacruz.triage.infrastructure.entrypoint.web.exception.Problemas;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
@@ -21,8 +22,8 @@ public class SecurityConfig {
 
 	@Bean
 	SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http, TriageSecurityProperties propiedades,
-			ObjectMapper objectMapper) {
-		var entryPoint = ApiKeyAuthentication.entryPoint(objectMapper, propiedades.apiKeyHeader());
+			ObjectMapper objectMapper, Problemas problemas) {
+		var entryPoint = ApiKeyAuthentication.entryPoint(objectMapper, propiedades.apiKeyHeader(), problemas);
 
 		var filtro = new AuthenticationWebFilter(ApiKeyAuthentication.manager(propiedades.apiKey()));
 		filtro.setServerAuthenticationConverter(ApiKeyAuthentication.converter(propiedades.apiKeyHeader()));

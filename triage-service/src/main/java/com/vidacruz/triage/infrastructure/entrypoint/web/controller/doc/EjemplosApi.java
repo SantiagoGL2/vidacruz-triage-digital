@@ -1,5 +1,7 @@
 package com.vidacruz.triage.infrastructure.entrypoint.web.controller.doc;
 
+import com.vidacruz.triage.infrastructure.entrypoint.web.exception.ErrorApi;
+
 /**
  * Ejemplos JSON de la documentacion OpenAPI (se referencian desde las anotaciones de los controllers). Los pacientes E1 y E5 son los de
  * "Datos de referencia" del enunciado.
@@ -8,6 +10,23 @@ public final class EjemplosApi {
 
 	private EjemplosApi() {
 	}
+
+	// ---------------------------------------------------------------- valores que se repiten en varios ejemplos
+
+	/** Paciente del enunciado E1 (CRITICO) usado como protagonista de los ejemplos. */
+	public static final String ID_PACIENTE = "e62f5bb0-848c-4343-9887-19cc8fcf3a0a";
+	public static final String ID_EVENTO_ALERTA = "ac2bf6bf-3a64-4d0e-8d7e-0a8f9d6a7b21";
+	public static final String FECHA_REGISTRO = "2026-11-04T15:17:57.285937Z";
+	public static final String FECHA_PRIMERA_CONSULTA = "2026-11-04T15:21:10.402118Z";
+	public static final String FECHA_ESCALAMIENTO = "2026-11-04T15:23:30.100Z";
+	public static final String CORRELATION_ID = "demo-001";
+	public static final String CORRELATION_ESCALAMIENTO = "escalamiento-sla-dc1f9056";
+	/** Inicio del rango del reporte (tambien es la primera hora del ejemplo). */
+	public static final String INICIO_REPORTE = "2026-11-04T00:00:00-05:00";
+	public static final String FIN_REPORTE_PARAMETRO = "2026-11-05T00:00:00-05:00";
+	public static final String HORA_REPORTE = "2026-11-04T08:00:00-05:00";
+	/** Conteo por nivel del ejemplo del reporte (clave = nombre del enum NivelTriaje). */
+	public static final String POR_NIVEL = "{\"CRITICO\":1,\"URGENTE\":2,\"URGENTE_2\":4,\"NO_URGENTE\":3,\"NO_URGENTE_2\":2}";
 
 	// ---------------------------------------------------------------- POST /triage/pacientes
 
@@ -45,12 +64,14 @@ public final class EjemplosApi {
 
 	public static final String REGISTRADO_E1 = """
 			{
-			  "id": "e62f5bb0-848c-4343-9887-19cc8fcf3a0a",
+			  "id": \"""" + ID_PACIENTE + """
+			",
 			  "nivel": "CRITICO",
 			  "nivelNumero": 1,
 			  "slaMinutos": 5,
 			  "estado": "REGISTRADO",
-			  "fechaRegistro": "2026-11-04T15:17:57.285937Z"
+			  "fechaRegistro": \"""" + FECHA_REGISTRO + """
+			"
 			}
 			""";
 
@@ -78,7 +99,8 @@ public final class EjemplosApi {
 
 	public static final String PACIENTE = """
 			{
-			  "id": "e62f5bb0-848c-4343-9887-19cc8fcf3a0a",
+			  "id": \"""" + ID_PACIENTE + """
+			",
 			  "nombreCompleto": "Carlos Andrés Pérez",
 			  "edad": 58,
 			  "signosVitales": {
@@ -97,9 +119,12 @@ public final class EjemplosApi {
 			  "estado": "EN_CONSULTA",
 			  "escalado": false,
 			  "fechaEscalamiento": null,
-			  "fechaRegistro": "2026-11-04T15:17:57.285937Z",
-			  "fechaPrimeraConsulta": "2026-11-04T15:21:10.402118Z",
-			  "fechaUltimoCambioEstado": "2026-11-04T15:21:10.402118Z",
+			  "fechaRegistro": \"""" + FECHA_REGISTRO + """
+			",
+			  "fechaPrimeraConsulta": \"""" + FECHA_PRIMERA_CONSULTA + """
+			",
+			  "fechaUltimoCambioEstado": \"""" + FECHA_PRIMERA_CONSULTA + """
+			",
 			  "tiempoEnEstadoSegundos": 0,
 			  "tiempoEnEstadoMinutos": 0
 			}
@@ -108,21 +133,29 @@ public final class EjemplosApi {
 	// ---------------------------------------------------------------- alertas SSE
 
 	public static final String ALERTA_SSE = """
-			id:ac2bf6bf-3a64-4d0e-8d7e-0a8f9d6a7b21
+			id:""" + ID_EVENTO_ALERTA + """
+			
 			event:alerta
-			data:{"eventId":"ac2bf6bf-3a64-4d0e-8d7e-0a8f9d6a7b21","pacienteId":"e62f5bb0-848c-4343-9887-19cc8fcf3a0a","nivel":"CRITICO","nivelNumero":1,"minutosEspera":6,"slaMinutos":5,"fechaRegistro":"2026-11-04T15:17:57.285937Z","fechaEscalamiento":"2026-11-04T15:23:30.100Z","correlationId":"escalamiento-sla-dc1f9056"}
+			data:{"eventId":\"""" + ID_EVENTO_ALERTA + """
+			","pacienteId":\"""" + ID_PACIENTE + """
+			","nivel":"CRITICO","nivelNumero":1,"minutosEspera":6,"slaMinutos":5,"fechaRegistro":\"""" + FECHA_REGISTRO + """
+			","fechaEscalamiento":\"""" + FECHA_ESCALAMIENTO + """
+			","correlationId":\"""" + CORRELATION_ESCALAMIENTO + """
+			"}
 			""";
 
 	// ---------------------------------------------------------------- reporte RF-05
 
 	public static final String REPORTE = """
 			{
-			  "desde": "2026-11-04T00:00:00-05:00",
+			  "desde": \"""" + INICIO_REPORTE + """
+			",
 			  "hasta": "2026-11-04T03:00:00-05:00",
 			  "zonaHoraria": "America/Bogota",
 			  "horas": [
 			    {
-			      "hora": "2026-11-04T00:00:00-05:00",
+			      "hora": \"""" + INICIO_REPORTE + """
+			",
 			      "totalRegistrados": 12,
 			      "porNivel": { "CRITICO": 1, "URGENTE": 2, "URGENTE_2": 4, "NO_URGENTE": 3, "NO_URGENTE_2": 2 },
 			      "pacientesAtendidos": 9,
@@ -153,13 +186,16 @@ public final class EjemplosApi {
 
 	public static final String ERROR_400_VALIDACION = """
 			{
-			  "type": "urn:vidacruz:triage:problema:validacion",
+			  "type": \"""" + ErrorApi.URI_BASE + """
+			validacion",
 			  "title": "Datos invalidos",
 			  "status": 400,
 			  "detail": "Hay 1 dato(s) invalido(s): frecuenciaCardiaca",
 			  "instance": "/triage/pacientes",
-			  "correlationId": "demo-001",
-			  "timestamp": "2026-11-04T15:17:57.285937Z",
+			  "correlationId": \"""" + CORRELATION_ID + """
+			",
+			  "timestamp": \"""" + FECHA_REGISTRO + """
+			",
 			  "errores": [
 			    { "campo": "frecuenciaCardiaca", "valor": 300, "mensaje": "valor invalido; esperado: 20 a 250 bpm" }
 			  ]
@@ -168,13 +204,16 @@ public final class EjemplosApi {
 
 	public static final String ERROR_400_REPORTE = """
 			{
-			  "type": "urn:vidacruz:triage:problema:validacion",
+			  "type": \"""" + ErrorApi.URI_BASE + """
+			validacion",
 			  "title": "Datos invalidos",
 			  "status": 400,
 			  "detail": "Hay 1 dato(s) invalido(s): desde",
 			  "instance": "/triage/reportes/operacion",
-			  "correlationId": "demo-001",
-			  "timestamp": "2026-11-04T15:17:57.285937Z",
+			  "correlationId": \"""" + CORRELATION_ID + """
+			",
+			  "timestamp": \"""" + FECHA_REGISTRO + """
+			",
 			  "errores": [
 			    { "campo": "desde", "valor": "2026-11-05T00:00Z", "mensaje": "debe ser anterior a 'hasta' (rango [desde, hasta))" }
 			  ]
@@ -183,37 +222,49 @@ public final class EjemplosApi {
 
 	public static final String ERROR_401 = """
 			{
-			  "type": "urn:vidacruz:triage:problema:no-autenticado",
+			  "type": \"""" + ErrorApi.URI_BASE + """
+			no-autenticado",
 			  "title": "No autenticado",
 			  "status": 401,
 			  "detail": "Falta el header X-API-Key o su valor no es valido",
 			  "instance": "/triage/pacientes",
-			  "correlationId": "demo-001",
-			  "timestamp": "2026-11-04T15:17:57.285937Z"
+			  "correlationId": \"""" + CORRELATION_ID + """
+			",
+			  "timestamp": \"""" + FECHA_REGISTRO + """
+			"
 			}
 			""";
 
 	public static final String ERROR_404 = """
 			{
-			  "type": "urn:vidacruz:triage:problema:no-encontrado",
+			  "type": \"""" + ErrorApi.URI_BASE + """
+			no-encontrado",
 			  "title": "Paciente no encontrado",
 			  "status": 404,
-			  "detail": "No existe un paciente con id e62f5bb0-848c-4343-9887-19cc8fcf3a0a",
-			  "instance": "/triage/pacientes/e62f5bb0-848c-4343-9887-19cc8fcf3a0a",
-			  "correlationId": "demo-001",
-			  "timestamp": "2026-11-04T15:17:57.285937Z"
+			  "detail": "No existe un paciente con id\s""" + ID_PACIENTE + """
+			",
+			  "instance": "/triage/pacientes/""" + ID_PACIENTE + """
+			",
+			  "correlationId": \"""" + CORRELATION_ID + """
+			",
+			  "timestamp": \"""" + FECHA_REGISTRO + """
+			"
 			}
 			""";
 
 	public static final String ERROR_409_TRANSICION = """
 			{
-			  "type": "urn:vidacruz:triage:problema:transicion-invalida",
+			  "type": \"""" + ErrorApi.URI_BASE + """
+			transicion-invalida",
 			  "title": "Transicion de estado invalida",
 			  "status": 409,
 			  "detail": "No se puede pasar de ALTA a EN_CONSULTA. Destinos validos desde ALTA: ninguno",
-			  "instance": "/triage/pacientes/e62f5bb0-848c-4343-9887-19cc8fcf3a0a/estado",
-			  "correlationId": "demo-001",
-			  "timestamp": "2026-11-04T15:17:57.285937Z",
+			  "instance": "/triage/pacientes/""" + ID_PACIENTE + """
+			/estado",
+			  "correlationId": \"""" + CORRELATION_ID + """
+			",
+			  "timestamp": \"""" + FECHA_REGISTRO + """
+			",
 			  "estadoActual": "ALTA",
 			  "estadoSolicitado": "EN_CONSULTA"
 			}
@@ -221,13 +272,16 @@ public final class EjemplosApi {
 
 	public static final String ERROR_500 = """
 			{
-			  "type": "urn:vidacruz:triage:problema:interno",
+			  "type": \"""" + ErrorApi.URI_BASE + """
+			interno",
 			  "title": "Error interno",
 			  "status": 500,
 			  "detail": "Ocurrio un error interno. Reporta el correlationId al equipo de soporte.",
 			  "instance": "/triage/pacientes",
-			  "correlationId": "demo-001",
-			  "timestamp": "2026-11-04T15:17:57.285937Z"
+			  "correlationId": \"""" + CORRELATION_ID + """
+			",
+			  "timestamp": \"""" + FECHA_REGISTRO + """
+			"
 			}
 			""";
 

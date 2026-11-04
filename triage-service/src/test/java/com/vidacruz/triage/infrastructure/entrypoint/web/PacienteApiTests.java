@@ -248,7 +248,7 @@ class PacienteApiTests extends AbstractIntegrationTest {
 				.expectStatus().isBadRequest()
 				.expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON)
 				.expectBody()
-				.jsonPath("$.type").isEqualTo("urn:vidacruz:triage:problema:json-malformado")
+				.jsonPath("$.type").isEqualTo("https://vidacruz.example/errores/json-malformado")
 				.jsonPath("$.correlationId").isNotEmpty();
 	}
 
@@ -487,7 +487,7 @@ class PacienteApiTests extends AbstractIntegrationTest {
 				.expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON)
 				.expectBody()
 				.jsonPath("$.status").isEqualTo(401)
-				.jsonPath("$.type").isEqualTo("urn:vidacruz:triage:problema:no-autenticado")
+				.jsonPath("$.type").isEqualTo("https://vidacruz.example/errores/no-autenticado")
 				.jsonPath("$.correlationId").isNotEmpty();
 	}
 

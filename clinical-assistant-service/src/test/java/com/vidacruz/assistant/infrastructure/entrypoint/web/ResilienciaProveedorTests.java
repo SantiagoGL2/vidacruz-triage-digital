@@ -44,7 +44,7 @@ class ResilienciaProveedorTests extends AbstractIntegrationTest {
 				.expectHeader().valueEquals("Retry-After", "7")
 				.expectBody()
 				.jsonPath("$.status").isEqualTo(503)
-				.jsonPath("$.type").isEqualTo("urn:vidacruz:asistente:problema:asistente-no-disponible")
+				.jsonPath("$.type").isEqualTo("https://vidacruz.example/errores/asistente-no-disponible")
 				.jsonPath("$.detail").isEqualTo(MENSAJE)
 				.jsonPath("$.correlationId").exists();
 	}

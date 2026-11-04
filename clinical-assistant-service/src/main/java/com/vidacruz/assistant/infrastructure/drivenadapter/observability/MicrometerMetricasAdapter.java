@@ -31,32 +31,32 @@ class MicrometerMetricasAdapter implements MetricasPort {
 		for (NivelTriaje nivel : NivelTriaje.values()) {
 			AtomicLong valor = new AtomicLong();
 			activosPorNivel.put(nivel, valor);
-			Gauge.builder("asistente.pacientes.activos", valor, AtomicLong::get)
+			Gauge.builder(NombresMetricas.PACIENTES_ACTIVOS, valor, AtomicLong::get)
 					.description("Pacientes activos (no en ALTA) en la vista de urgencias, por nivel")
-					.tag("nivel", nivel.name()).register(registry);
+					.tag(NombresMetricas.TAG_NIVEL, nivel.name()).register(registry);
 		}
-		Gauge.builder("asistente.pacientes.escalados", escalados, AtomicLong::get)
+		Gauge.builder(NombresMetricas.PACIENTES_ESCALADOS, escalados, AtomicLong::get)
 				.description("Pacientes activos escalados en la vista de urgencias").register(registry);
 	}
 
 	@Override
 	public void eventoProcesado(String tipoEvento) {
-		registry.counter("asistente.eventos.procesados", "eventType", tipoEvento).increment();
+		registry.counter(NombresMetricas.EVENTOS_PROCESADOS, NombresMetricas.TAG_EVENT_TYPE, tipoEvento).increment();
 	}
 
 	@Override
 	public void eventoDuplicado() {
-		registry.counter("asistente.eventos.duplicados").increment();
+		registry.counter(NombresMetricas.EVENTOS_DUPLICADOS).increment();
 	}
 
 	@Override
 	public void eventoIgnorado(String motivo) {
-		registry.counter("asistente.eventos.ignorados", "motivo", motivo).increment();
+		registry.counter(NombresMetricas.EVENTOS_IGNORADOS, NombresMetricas.TAG_MOTIVO, motivo).increment();
 	}
 
 	@Override
 	public void eventoEnviadoADlt() {
-		registry.counter("asistente.eventos.dlt").increment();
+		registry.counter(NombresMetricas.EVENTOS_DLT).increment();
 	}
 
 	@Override

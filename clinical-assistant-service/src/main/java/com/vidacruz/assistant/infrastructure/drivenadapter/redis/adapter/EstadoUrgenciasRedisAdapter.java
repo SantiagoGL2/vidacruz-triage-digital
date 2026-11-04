@@ -92,15 +92,21 @@ class EstadoUrgenciasRedisAdapter implements EstadoUrgenciasPort {
 		}
 	}
 
+	/** Codigos de operacion del protocolo con aplicar-evento.lua (ARGV[1]); no son valores del dominio. */
+	private static final String OP_REGISTRAR = "REGISTRAR";
+	private static final String OP_CONSULTA = "CONSULTA";
+	private static final String OP_ESCALAR = "ESCALAR";
+	private static final String OP_ALTA = "ALTA";
+
 	/** ARGV del script: operacion, nivel, fechaRegistro, occurredAt (micros) y TTL (segundos) de la marca del eventId. */
 	private List<String> argumentos(OperacionEstado operacion, Instant ocurridoEn) {
 		String micros = String.valueOf(ChronoUnit.MICROS.between(Instant.EPOCH, ocurridoEn));
 		String ttl = String.valueOf(ttlSegundos);
 		return switch (operacion) {
-			case OperacionEstado.Registrar r -> List.of("REGISTRAR", r.nivel().name(), r.fechaRegistro().toString(), micros, ttl);
-			case OperacionEstado.PasarAConsulta c -> List.of("CONSULTA", "", "", micros, ttl);
-			case OperacionEstado.Escalar e -> List.of("ESCALAR", "", "", micros, ttl);
-			case OperacionEstado.DarDeAlta a -> List.of("ALTA", "", "", micros, ttl);
+			case OperacionEstado.Registrar r -> List.of(OP_REGISTRAR, r.nivel().name(), r.fechaRegistro().toString(), micros, ttl);
+			case OperacionEstado.PasarAConsulta c -> List.of(OP_CONSULTA, "", "", micros, ttl);
+			case OperacionEstado.Escalar e -> List.of(OP_ESCALAR, "", "", micros, ttl);
+			case OperacionEstado.DarDeAlta a -> List.of(OP_ALTA, "", "", micros, ttl);
 		};
 	}
 

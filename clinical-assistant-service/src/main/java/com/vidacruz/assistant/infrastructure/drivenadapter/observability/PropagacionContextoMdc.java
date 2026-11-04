@@ -1,6 +1,5 @@
 package com.vidacruz.assistant.infrastructure.drivenadapter.observability;
 
-import com.vidacruz.assistant.application.context.ContextoCorrelacion;
 import io.micrometer.context.ContextRegistry;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.MDC;
@@ -20,10 +19,10 @@ class PropagacionContextoMdc implements InitializingBean {
 	@Override
 	public void afterPropertiesSet() {
 		if (REGISTRADO.compareAndSet(false, true)) {
-			ContextRegistry.getInstance().registerThreadLocalAccessor(ContextoCorrelacion.CLAVE,
-					() -> MDC.get(ContextoCorrelacion.CLAVE),
-					valor -> MDC.put(ContextoCorrelacion.CLAVE, valor),
-					() -> MDC.remove(ContextoCorrelacion.CLAVE));
+			ContextRegistry.getInstance().registerThreadLocalAccessor(ClavesMdc.CORRELATION_ID,
+					() -> MDC.get(ClavesMdc.CORRELATION_ID),
+					valor -> MDC.put(ClavesMdc.CORRELATION_ID, valor),
+					() -> MDC.remove(ClavesMdc.CORRELATION_ID));
 		}
 	}
 

@@ -3,6 +3,7 @@ package com.vidacruz.triage.infrastructure.drivenadapter.sse.adapter;
 import com.vidacruz.triage.domain.model.Alerta;
 import com.vidacruz.triage.domain.port.out.FlujoAlertasPort;
 import com.vidacruz.triage.domain.port.out.NotificadorAlertasPort;
+import com.vidacruz.triage.infrastructure.drivenadapter.observability.NombresMetricas;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import org.springframework.stereotype.Component;
@@ -31,7 +32,7 @@ class AlertaSseAdapter implements NotificadorAlertasPort, FlujoAlertasPort {
 		return Mono.fromRunnable(() -> {
 			// busyLooping: varios hilos del consumidor pueden emitir a la vez y el sink exige emision serializada
 			sink.emitNext(alerta, Sinks.EmitFailureHandler.busyLooping(Duration.ofMillis(100)));
-			registry.counter("triage.alertas.emitidas", "canal", "sse").increment();
+			registry.counter(NombresMetricas.ALERTAS_EMITIDAS, NombresMetricas.TAG_CANAL, NombresMetricas.CANAL_SSE).increment();
 		});
 	}
 

@@ -4,6 +4,7 @@ import com.vidacruz.triage.domain.event.EventoPendiente;
 import com.vidacruz.triage.domain.port.out.PublicadorEventosPort;
 import com.vidacruz.triage.infrastructure.config.TriageKafkaProperties;
 import com.vidacruz.triage.infrastructure.config.TriageOutboxProperties;
+import com.vidacruz.triage.infrastructure.drivenadapter.kafka.CabecerasKafka;
 import java.nio.charset.StandardCharsets;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -41,9 +42,9 @@ class KafkaPublicadorEventosAdapter implements PublicadorEventosPort {
 
 	private ProducerRecord<String, String> registro(EventoPendiente evento) {
 		var registro = new ProducerRecord<String, String>(kafka.topic(), evento.aggregateId().toString(), evento.payload());
-		registro.headers().add("eventId", bytes(evento.eventId().toString()));
-		registro.headers().add("eventType", bytes(evento.eventType()));
-		registro.headers().add("correlationId", bytes(evento.correlationId() == null ? "" : evento.correlationId()));
+		registro.headers().add(CabecerasKafka.EVENT_ID, bytes(evento.eventId().toString()));
+		registro.headers().add(CabecerasKafka.EVENT_TYPE, bytes(evento.eventType()));
+		registro.headers().add(CabecerasKafka.CORRELATION_ID, bytes(evento.correlationId() == null ? "" : evento.correlationId()));
 		return registro;
 	}
 

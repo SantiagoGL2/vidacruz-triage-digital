@@ -18,11 +18,14 @@ import org.springframework.util.backoff.ExponentialBackOff;
 @Configuration
 class KafkaConsumerConfig {
 
+	/** La DLT es el topic de eventos + este sufijo (triaje.eventos -> triaje.eventos.DLT). */
+	static final String SUFIJO_DLT = ".DLT";
+
 	@Bean
 	DefaultErrorHandler kafkaErrorHandler(KafkaTemplate<Object, Object> template, TriageKafkaProperties kafka,
 			TriageAlertasProperties alertas) {
 		var recoverer = new DeadLetterPublishingRecoverer(template,
-				(registro, error) -> new TopicPartition(kafka.topic() + ".DLT", -1));
+				(registro, error) -> new TopicPartition(kafka.topic() + SUFIJO_DLT, -1));
 		var consumidor = alertas.consumidor();
 		var backoff = new ExponentialBackOff(consumidor.backoffInicial().toMillis(), 2.0);
 		backoff.setMaxInterval(consumidor.backoffMaximo().toMillis());

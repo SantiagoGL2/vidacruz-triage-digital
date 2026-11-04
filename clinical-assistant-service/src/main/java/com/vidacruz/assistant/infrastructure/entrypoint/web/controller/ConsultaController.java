@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -49,22 +50,22 @@ class ConsultaController {
 					La pregunta se trata como dato, no como instrucciones.""")
 	@ApiResponses({
 			@ApiResponse(responseCode = "200", description = "Respuesta con fuentes, o el aviso de «sin protocolo» con `fuentes` vacío.",
-					content = @Content(mediaType = "application/json",
+					content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
 							schema = @Schema(implementation = ConsultaResponse.class),
 							examples = {
 									@ExampleObject(name = "Con fuentes (crisis hipertensiva)", value = EjemplosApi.CONSULTA_RESPONDIDA),
 									@ExampleObject(name = "Sin protocolo (diabetes)", value = EjemplosApi.CONSULTA_SIN_PROTOCOLO)})),
 			@ApiResponse(responseCode = "400", description = "`pregunta` ausente, en blanco, de menos de 5 o más de 500 caracteres.",
-					content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class),
+					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_400_CONSULTA))),
 			@ApiResponse(responseCode = "401", description = "Falta el header `X-API-Key` o es invalido.",
-					content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class),
+					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_401))),
 			@ApiResponse(responseCode = "500", description = "Error interno inesperado.",
-					content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class),
+					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_500))),
 			@ApiResponse(responseCode = "503", description = "Modo degradado: el proveedor de IA no está disponible o el índice de protocolos aún no está listo. Header `Retry-After`.",
-					content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class),
+					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = {
 									@ExampleObject(name = "Proveedor de IA caído", value = EjemplosApi.ERROR_503_LLM),
 									@ExampleObject(name = "Índice en construcción", value = EjemplosApi.ERROR_503_INDICE)}))})

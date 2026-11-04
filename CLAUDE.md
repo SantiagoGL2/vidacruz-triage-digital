@@ -124,6 +124,18 @@ Reglas (las verifica `ArquitecturaTests`; si falla una, se corrige el código, n
 - Errores: excepciones de dominio → `@RestControllerAdvice` global con cuerpo estable (400 validación con campo inválido, 404, 409 transición inválida, 503 modo degradado).
 - Tiempos con `Instant`/`TIMESTAMPTZ` (UTC) y reloj inyectable (`Clock`) para testear.
 
+### Literales (ambos servicios)
+
+Sin una clase `Constantes` global: cada literal vive junto a lo que lo usa, y lo compartido se agrupa por tema.
+
+- **Framework:** `MediaType.*_VALUE` (también en `@Content(mediaType=…)`), `HttpHeaders.*`; nunca `"application/problem+json"` escrito a mano.
+- **Valores de dominio** (`CRITICO`, `EN_CONSULTA`, `paciente_escalado`…): el enum (`name()`, `nombreEvento()`/`codigo()`). Excepción: las anotaciones de OpenAPI exigen constantes de compilación, así que `ValoresApi` (triage) las repite y `ValoresApiTests` las compara con los enums.
+- **Claves técnicas compartidas:** clases pequeñas `final`, sin lógica, en la capa que las usa: `CabecerasHttp` (`X-Correlation-Id`), `CabecerasKafka`, `ClavesMdc`, `NombresMetricas` (nombres y tags de métricas), `PropiedadesProblema` (campos extra del error).
+- **Errores de la API:** enum `ErrorApi` (status + `type` URI estable) en `entrypoint/web/exception`; los textos de usuario en `messages.properties` (`MessageSource`, listo para otros idiomas). `GlobalExceptionHandler` y `Problemas` solo usan el catálogo. Un error nuevo = entrada en `ErrorApi` + claves en `messages.properties` + fila en `docs/errores.md`.
+- **Ejemplos de OpenAPI:** valores repetidos (fechas, UUID…) como constantes con nombre en `EjemplosApi`.
+- **Se dejan en su sitio:** mensajes de log, mensajes de invariantes de dominio (`IllegalArgumentException`), SQL, nombres de columnas/claves JSON de un solo uso y literales de tests.
+- `LiteralesProhibidosTests` (en cada servicio) falla si el código de producción escribe `"application/problem+json"` o el nombre de un valor de dominio como literal completo (con excepciones justificadas en el propio test).
+
 ## Reglas de trabajo
 
 1. **Nunca bloquear el event loop ni los schedulers de Reactor** (`parallel`, `single`): nada de `.block()`, `Thread.sleep`, JDBC ni clientes síncronos fuera de `boundedElastic`. Usa BlockHound en tests si hace falta. **Única excepción:** en el hilo de un consumidor Kafka (`@KafkaListener`, hilo dedicado del contenedor) se permite `block(timeout)` para garantizar el orden por partición y que el offset se confirme solo al terminar; solo en el listener, nunca en casos de uso, adapters ni controllers. Ver `docs/adr/0004-consumo-sincrono-de-kafka-en-servicios-reactivos.md` y el supuesto 89 de `docs/supuestos.md`.

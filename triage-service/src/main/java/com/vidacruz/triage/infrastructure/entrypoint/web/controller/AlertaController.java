@@ -49,14 +49,14 @@ class AlertaController {
 					Decision completa en el ADR 0002.""")
 	@ApiResponses({
 			@ApiResponse(responseCode = "200", description = "Stream abierto. Cada evento es una alerta de escalamiento.",
-					content = @Content(mediaType = "text/event-stream",
+					content = @Content(mediaType = MediaType.TEXT_EVENT_STREAM_VALUE,
 							schema = @Schema(implementation = AlertaResponse.class),
 							examples = @ExampleObject(name = "Evento SSE de una alerta", value = EjemplosApi.ALERTA_SSE))),
 			@ApiResponse(responseCode = "401", description = "Falta el header `X-API-Key` o es invalido (la API key no se acepta por query string).",
-					content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class),
+					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_401))),
 			@ApiResponse(responseCode = "500", description = "Error interno inesperado.",
-					content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class),
+					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_500)))})
 	@GetMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
 	Flux<ServerSentEvent<AlertaResponse>> stream() {

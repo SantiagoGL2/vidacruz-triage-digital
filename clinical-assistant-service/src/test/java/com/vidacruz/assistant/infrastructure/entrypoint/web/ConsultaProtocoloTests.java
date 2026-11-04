@@ -282,7 +282,7 @@ class ConsultaProtocoloTests extends AbstractIntegrationTest {
 	void unJsonMalformadoEsUn400() {
 		api().post().uri("/asistente/consulta").contentType(MediaType.APPLICATION_JSON).bodyValue("{no es json")
 				.exchange().expectStatus().isBadRequest().expectBody().jsonPath("$.type")
-				.isEqualTo("urn:vidacruz:asistente:problema:json-malformado");
+				.isEqualTo("https://vidacruz.example/errores/json-malformado");
 	}
 
 	@Test

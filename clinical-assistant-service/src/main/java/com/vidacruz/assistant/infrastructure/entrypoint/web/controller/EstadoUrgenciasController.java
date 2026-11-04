@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -44,17 +45,17 @@ class EstadoUrgenciasController {
 					que tan fresca es la vista. Si Redis no responde, la respuesta es 503.""")
 	@ApiResponses({
 			@ApiResponse(responseCode = "200", description = "Vista de urgencias.",
-					content = @Content(mediaType = "application/json",
+					content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
 							schema = @Schema(implementation = EstadoUrgenciasResponse.class),
 							examples = @ExampleObject(value = EjemplosApi.ESTADO_URGENCIAS))),
 			@ApiResponse(responseCode = "401", description = "Falta el header `X-API-Key` o es invalido.",
-					content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class),
+					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_401))),
 			@ApiResponse(responseCode = "500", description = "Error interno inesperado.",
-					content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class),
+					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_500))),
 			@ApiResponse(responseCode = "503", description = "Redis no esta disponible: la vista no se puede leer. Reintentar (header `Retry-After`).",
-					content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class),
+					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_503)))})
 	@GetMapping("/estado-urgencias")
 	Mono<EstadoUrgenciasResponse> estadoUrgencias() {

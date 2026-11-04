@@ -22,23 +22,23 @@ class MicrometerMetricasRagAdapter implements MetricasRagPort {
 
 	@Override
 	public void consulta(String resultado) {
-		registry.counter("asistente.consultas", "resultado", resultado).increment();
+		registry.counter(NombresMetricas.CONSULTAS, NombresMetricas.TAG_RESULTADO, resultado).increment();
 	}
 
 	@Override
 	public void citasDescartadas(int cantidad) {
-		registry.counter("asistente.citas.descartadas").increment(cantidad);
+		registry.counter(NombresMetricas.CITAS_DESCARTADAS).increment(cantidad);
 	}
 
 	@Override
 	public void latenciaLlm(String operacion, String resultado, Duration duracion) {
-		Timer.builder("asistente.llm.latencia").description("Latencia de cada llamada al proveedor de IA")
-				.tag("operacion", operacion).tag("resultado", resultado).register(registry).record(duracion);
+		Timer.builder(NombresMetricas.LLM_LATENCIA).description("Latencia de cada llamada al proveedor de IA")
+				.tag(NombresMetricas.TAG_OPERACION, operacion).tag(NombresMetricas.TAG_RESULTADO, resultado).register(registry).record(duracion);
 	}
 
 	@Override
 	public void tokens(String tipo, long cantidad) {
-		registry.counter("asistente.llm.tokens", "tipo", tipo).increment(cantidad);
+		registry.counter(NombresMetricas.LLM_TOKENS, NombresMetricas.TAG_TIPO, tipo).increment(cantidad);
 	}
 
 }

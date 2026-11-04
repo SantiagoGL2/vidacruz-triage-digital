@@ -5,6 +5,11 @@ spring:
     name: clinical-assistant-service
   profiles:
     default: local
+  messages:
+    # Textos de los errores de la API (messages.properties). Sin fallback al idioma del sistema: si no hay
+    # messages_<idioma>.properties para el Accept-Language de la peticion, se usa siempre el espanol (messages.properties).
+    basename: messages
+    fallback-to-system-locale: false
   reactor:
     # Copia el Context de Reactor (correlationId) al MDC en cada operador: logs con correlationId sin ThreadLocal manual.
     context-propagation: auto

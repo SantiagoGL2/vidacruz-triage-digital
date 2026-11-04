@@ -1,15 +1,13 @@
 package com.vidacruz.assistant.infrastructure.config.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.vidacruz.assistant.infrastructure.entrypoint.web.filter.CorrelationIdWebFilter;
-import java.net.URI;
+import com.vidacruz.assistant.infrastructure.entrypoint.web.exception.ErrorApi;
+import com.vidacruz.assistant.infrastructure.entrypoint.web.exception.Problemas;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Instant;
 import java.util.List;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -50,20 +48,15 @@ final class ApiKeyAuthentication {
 	}
 
 	/** 401 como ProblemDetail (mismo formato que el resto de errores). */
-	static ServerAuthenticationEntryPoint entryPoint(ObjectMapper objectMapper, String header) {
-		return (exchange, ex) -> escribir401(objectMapper, header, exchange);
+	static ServerAuthenticationEntryPoint entryPoint(ObjectMapper objectMapper, String header, Problemas problemas) {
+		return (exchange, ex) -> escribir401(objectMapper, header, problemas, exchange);
 	}
 
-	private static Mono<Void> escribir401(ObjectMapper objectMapper, String header, ServerWebExchange exchange) {
-		ProblemDetail problema = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED,
-				"Falta el header %s o su valor no es valido".formatted(header));
-		problema.setType(URI.create("urn:vidacruz:asistente:problema:no-autenticado"));
-		problema.setTitle("No autenticado");
-		problema.setInstance(URI.create(exchange.getRequest().getPath().value()));
-		problema.setProperty("correlationId", CorrelationIdWebFilter.de(exchange));
-		problema.setProperty("timestamp", Instant.now());
+	private static Mono<Void> escribir401(ObjectMapper objectMapper, String header, Problemas problemas,
+			ServerWebExchange exchange) {
+		ProblemDetail problema = problemas.crear(ErrorApi.NO_AUTENTICADO, exchange, header);
 		var respuesta = exchange.getResponse();
-		respuesta.setStatusCode(HttpStatus.UNAUTHORIZED);
+		respuesta.setStatusCode(ErrorApi.NO_AUTENTICADO.status());
 		respuesta.getHeaders().setContentType(MediaType.APPLICATION_PROBLEM_JSON);
 		respuesta.getHeaders().set(HttpHeaders.WWW_AUTHENTICATE, "ApiKey realm=\"asistente\"");
 		return Mono.fromCallable(() -> objectMapper.writeValueAsBytes(problema))

@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.OffsetDateTime;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -55,26 +56,26 @@ class ReporteOperacionController {
 					codificalo como `%2B` en la URL.""")
 	@ApiResponses({
 			@ApiResponse(responseCode = "200", description = "Reporte generado: una entrada por cada hora del rango.",
-					content = @Content(mediaType = "application/json",
+					content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
 							schema = @Schema(implementation = ReporteOperacionResponse.class),
 							examples = @ExampleObject(value = EjemplosApi.REPORTE))),
 			@ApiResponse(responseCode = "400", description = "Parametro ausente, con formato invalido, `desde >= hasta` o rango mayor al maximo. `errores[].campo` indica el parametro.",
-					content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class),
+					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_400_REPORTE))),
 			@ApiResponse(responseCode = "401", description = "Falta el header `X-API-Key` o es invalido.",
-					content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class),
+					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_401))),
 			@ApiResponse(responseCode = "500", description = "Error interno inesperado.",
-					content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemDetail.class),
+					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_500)))})
 	@GetMapping("/operacion")
 	Mono<ReporteOperacionResponse> operacion(
 			@RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
 			@Parameter(description = "Inicio del rango (incluido). ISO 8601 con zona u offset.", required = true,
-					example = "2026-11-04T00:00:00-05:00") OffsetDateTime desde,
+					example = EjemplosApi.INICIO_REPORTE) OffsetDateTime desde,
 			@RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
 			@Parameter(description = "Fin del rango (excluido). ISO 8601 con zona u offset. Debe ser posterior a `desde`.", required = true,
-					example = "2026-11-05T00:00:00-05:00") OffsetDateTime hasta) {
+					example = EjemplosApi.FIN_REPORTE_PARAMETRO) OffsetDateTime hasta) {
 		return reporte.generar(new GenerarReporteOperacionComando(desde.toInstant(), hasta.toInstant()))
 				.map(ReporteOperacionResponse::desde);
 	}

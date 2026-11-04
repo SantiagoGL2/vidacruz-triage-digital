@@ -64,5 +64,6 @@ Flujo, prompt, umbral y resiliencia: [`docs/asistente-rag.md`](docs/asistente-ra
 * [`docs/supuestos.md`](docs/supuestos.md) — decisiones y supuestos.
 * [`docs/eventos.md`](docs/eventos.md) — contrato de los eventos Kafka (`triaje.eventos`).
 * [`docs/asistente-rag.md`](docs/asistente-rag.md) — el RAG del asistente: barreras anti-alucinación, prompt, umbral, resiliencia.
+* [`docs/errores.md`](docs/errores.md) — catálogo de errores de la API (`type`, status, mensajes).
 * [`docs/reporte-operacion.md`](docs/reporte-operacion.md) — la consulta SQL del RF-05 explicada, supuestos y EXPLAIN.
 * [`docs/adr/`](docs/adr/) — decisiones de arquitectura.

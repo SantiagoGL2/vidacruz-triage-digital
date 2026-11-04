@@ -21,9 +21,9 @@ class PropagacionContextoMdc implements InitializingBean {
 	public void afterPropertiesSet() {
 		if (REGISTRADO.compareAndSet(false, true)) {
 			ContextRegistry.getInstance().registerThreadLocalAccessor(ContextoCorrelacion.CLAVE,
-					() -> MDC.get(ContextoCorrelacion.CLAVE),
-					valor -> MDC.put(ContextoCorrelacion.CLAVE, valor),
-					() -> MDC.remove(ContextoCorrelacion.CLAVE));
+					() -> MDC.get(ClavesMdc.CORRELATION_ID),
+					valor -> MDC.put(ClavesMdc.CORRELATION_ID, valor),
+					() -> MDC.remove(ClavesMdc.CORRELATION_ID));
 		}
 	}
 

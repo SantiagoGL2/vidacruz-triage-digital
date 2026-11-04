@@ -47,6 +47,8 @@ com.vidacruz.<servicio>
 │   ├── context          contexto transversal (ContextoCorrelacion: clave del Reactor Context)
 │   └── exception        errores de aplicación (PacienteNoEncontradoException)
 └── infrastructure
+    ├── entrypoint.kafka   consumidor del topic (triage: alertas de escalamiento) · listener + exception
+    ├── entrypoint.scheduler  procesos de fondo reactivos (CicloPeriodico, Flux.interval) que llaman casos de uso
     ├── entrypoint.web   (adapters de entrada)
     │   ├── controller   <X>Controller; solo conocen application.port.in, command/result y dto
     │   ├── dto.request  <X>Request   (records + Bean Validation de presencia/tipo)
@@ -58,7 +60,10 @@ com.vidacruz.<servicio>
     │   │   ├── adapter  <X>R2dbcAdapter / <X>Adapter: implementan domain.port.out (package-private)
     │   │   ├── entity   <X>Entity: @Table de Spring Data R2DBC (NUNCA JPA)
     │   │   └── mapper   <X>Mapper: dominio <-> entity, explícito, uno por entidad
-    │   ├── kafka        (asistente y publicador del outbox) adapters de mensajería
+    │   ├── kafka        publicador del outbox hacia Kafka (triage) / productor-consumidor del asistente
+    │   ├── memory       deduplicación de eventos en memoria (LRU)
+    │   ├── sse          canal SSE de alertas (sink multicast)
+    │   ├── webhook      canal webhook de alertas (WebClient + Resilience4j)
     │   ├── redis        (asistente) vector store y estado en tiempo real
     │   ├── ai           (asistente) cliente LLM + Resilience4j
     │   └── observability  métricas Micrometer y propagación Reactor -> MDC
@@ -146,7 +151,7 @@ docker compose down -v           # apagar y borrar volúmenes
 
 Puertos del host: triage `8081`, asistente `8082`, PostgreSQL `5432`, Kafka (listener externo) `29092`, Redis `6379`, RedisInsight `8001`. Salud: `GET /actuator/health/readiness`.
 
-Perfiles: `local` (por defecto, hosts en localhost) · `docker` (hosts = nombres de servicio) · `test` (Testcontainers). Variables clave: ver `.env.example` (SLA por nivel `TRIAGE_SLA_*`, intervalo del scheduler `TRIAGE_ESCALAMIENTO_INTERVALO`, `LLM_*`, API keys).
+Perfiles: `local` (por defecto, hosts en localhost) · `docker` (hosts = nombres de servicio) · `test` (Testcontainers). Variables clave: ver `.env.example` (SLA por nivel `TRIAGE_SLA_*`, intervalo de evaluación del SLA `TRIAGE_SLA_INTERVALO_EVALUACION`, webhook de alertas `TRIAGE_ALERTAS_WEBHOOK_URL`, `LLM_*`, API keys).
 
 ### Testcontainers 2.x (decisión)
 
@@ -155,3 +160,11 @@ Perfiles: `local` (por defecto, hosts en localhost) · `docker` (hosts = nombres
 - **No usar `@ServiceConnection`** ni `spring-boot-testcontainers`: Boot 3.5 solo reconoce los contenedores 1.x. Las propiedades se inyectan con `@DynamicPropertySource`.
 - Los tests de integración extienden `AbstractIntegrationTest` y obtienen Postgres/Kafka de `Contenedores` (singletons por JVM, no un contenedor por clase).
 - Los tests de integracion web (`PacienteApiTests`, `AtomicidadTransaccionalTests`) corren con **BlockHound** activo (`BlockHoundSupport`; la JVM de test lleva `-XX:+AllowRedefinitionToAddDeleteMethods`). Si BlockHound falla un test, hay una llamada bloqueante real en el event loop: arreglala o envuelvela en `boundedElastic`; solo se permiten excepciones de libreria en `BlockHoundSupport`.
+
+### Procesos de fondo y alertas (triage-service)
+
+- **Escalamiento por SLA** (RF-03): `EscalarPacientesVencidosUseCase`, disparado por `CicloPeriodico` cada `triage.sla.intervalo-evaluacion`. UPDATE condicional atómico por paciente en su propia transacción; solo quien afecta 1 fila audita y escribe el evento. El SLA es el guardado en el paciente (un cambio de configuración solo afecta a pacientes nuevos). SLA mínimo del dominio: 1 minuto; el perfil `local` usa 1-5 min y evaluación cada 5 s.
+- **Publicador del outbox**: `PublicarEventosPendientesUseCase` (`FOR UPDATE SKIP LOCKED`, un evento por paciente por ciclo, backoff exponencial, métricas `triage.outbox.*`). Kafka caído no rompe el registro.
+- **Alertas** (RF-06, ADR 0002): consumidor del grupo `triage-alertas` → `NotificarEscalamientoUseCase` → SSE (`GET /triage/alertas/stream`, con `X-API-Key`) y webhook opcional. Sin nombre del paciente. Mensajes inválidos → `triaje.eventos.DLT`.
+- Apagar/encender: `triage.sla.habilitado`, `triage.outbox.habilitado`, `triage.alertas.consumidor.habilitado` (en el perfil `test` los tres arrancan **apagados**).
+- Tests de procesos: `RelojMutable` para vencer SLA, `KafkaDePrueba` (broker que se pausa), `AbstractPostgresTest` (solo BD) vs `AbstractIntegrationTest` (BD + Kafka compartido; el `@DynamicPropertySource` de la base prevalece sobre el del hijo). Las clases que encienden procesos usan `@DirtiesContext` y un `group-id` único.

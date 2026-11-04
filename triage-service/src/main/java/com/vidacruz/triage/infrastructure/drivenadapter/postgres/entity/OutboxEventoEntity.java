@@ -43,4 +43,10 @@ public class OutboxEventoEntity {
 	@Column("intentos")
 	private int intentos;
 
+	@Column("ultimo_intento_at")
+	private Instant ultimoIntentoAt;
+
+	@Column("ultimo_error")
+	private String ultimoError;
+
 }

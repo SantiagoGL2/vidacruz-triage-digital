@@ -8,7 +8,8 @@ import reactor.blockhound.BlockHound;
  * Netty, parallel, etc.) hace fallar el test. Los hilos de JUnit y boundedElastic no se vigilan.
  * <p>
  * Las excepciones de abajo son bloqueos conocidos e inofensivos de librerias (no del codigo del proyecto):
- * el logging sincrono a consola, la semilla perezosa de UUID.randomUUID y la carga perezosa de clases.
+ * el logging sincrono a consola, la semilla perezosa de UUID.randomUUID, la carga perezosa de clases y el lock
+ * de microsegundos de la ventana del CircuitBreaker de Resilience4j.
  */
 public final class BlockHoundSupport {
 
@@ -26,6 +27,12 @@ public final class BlockHoundSupport {
 					.allowBlockingCallsInside("ch.qos.logback.core.AppenderBase", "doAppend")
 					.allowBlockingCallsInside("ch.qos.logback.core.OutputStreamAppender", "subAppend")
 					.allowBlockingCallsInside("java.util.UUID", "randomUUID")
+					// Resilience4j registra cada llamada en una ventana deslizante protegida por un ReentrantLock que se
+					// mantiene microsegundos; con llamadas simultaneas puede hacer park() en un hilo de Netty (falso positivo)
+					.allowBlockingCallsInside("io.github.resilience4j.core.metrics.FixedSizeSlidingWindowMetrics", "record")
+					.allowBlockingCallsInside("io.github.resilience4j.circuitbreaker.internal.CircuitBreakerStateMachine", "onError")
+					.allowBlockingCallsInside("io.github.resilience4j.circuitbreaker.internal.CircuitBreakerStateMachine", "onSuccess")
+					.allowBlockingCallsInside("io.github.resilience4j.circuitbreaker.internal.CircuitBreakerStateMachine", "acquirePermission")
 					// primera carga de una clase desde un jar (p. ej. la primera vez que se arma un error): lectura de disco inevitable
 					.allowBlockingCallsInside("java.lang.ClassLoader", "loadClass")
 					.allowBlockingCallsInside("jdk.internal.loader.BuiltinClassLoader", "loadClassOrNull"));

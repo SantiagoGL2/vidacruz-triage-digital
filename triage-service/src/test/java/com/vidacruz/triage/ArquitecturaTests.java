@@ -83,6 +83,14 @@ class ArquitecturaTests {
 					"..infrastructure.drivenadapter..", "..domain.port.out..", "..application.usecase..")
 			.as("los controllers no tocan adapters, entities ni puertos de salida: solo application.port.in");
 
+	/** Lo mismo para los otros puntos de entrada: consumidor Kafka y procesos de fondo solo llaman casos de uso por su puerto. */
+	@ArchTest
+	static final ArchRule consumidoresYProcesosSoloPasanPorLosPuertosDeEntrada = noClasses().that().resideInAnyPackage(
+			"..entrypoint.kafka..", "..entrypoint.scheduler..")
+			.should().dependOnClassesThat().resideInAnyPackage(
+					"..infrastructure.drivenadapter..", "..domain.port.out..", "..application.usecase..")
+			.as("el consumidor Kafka y los procesos de fondo solo usan application.port.in");
+
 	@ArchTest
 	static final ArchRule entrypointNoConoceDrivenAdapters = noClasses().that().resideInAPackage("..infrastructure.entrypoint..")
 			.should().dependOnClassesThat().resideInAPackage("..infrastructure.drivenadapter..");
@@ -92,7 +100,7 @@ class ArquitecturaTests {
 			.should().dependOnClassesThat().resideInAPackage("..infrastructure.entrypoint..");
 
 	@ArchTest
-	static final ArchRule adaptersDePostgresImplementanPuertosDeSalida = classes().that().resideInAPackage("..postgres.adapter..")
+	static final ArchRule losAdaptersImplementanPuertosDeSalida = classes().that().resideInAPackage("..drivenadapter..adapter..").and().areTopLevelClasses()
 			.should().implement(resideInAPackage("..domain.port.out.."))
 			.andShould().haveSimpleNameEndingWith("Adapter");
 

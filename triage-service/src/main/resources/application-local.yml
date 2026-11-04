@@ -8,3 +8,16 @@ logging:
       console: ${LOG_FORMAT:}   # texto legible en local; exporta LOG_FORMAT=logstash para JSON
   level:
     com.vidacruz: ${LOG_LEVEL_APP:DEBUG}
+
+# SLA cortos y evaluacion frecuente para ver el escalamiento sin esperar (el minimo del dominio es 1 minuto).
+triage:
+  sla:
+    intervalo-evaluacion: ${TRIAGE_SLA_INTERVALO_EVALUACION:PT5S}
+    minutos:
+      CRITICO: ${TRIAGE_SLA_CRITICO:1}
+      URGENTE: ${TRIAGE_SLA_URGENTE:1}
+      URGENTE_2: ${TRIAGE_SLA_URGENTE_2:2}
+      NO_URGENTE: ${TRIAGE_SLA_NO_URGENTE:3}
+      NO_URGENTE_2: ${TRIAGE_SLA_NO_URGENTE_2:5}
+  outbox:
+    intervalo: ${TRIAGE_OUTBOX_INTERVALO:PT1S}

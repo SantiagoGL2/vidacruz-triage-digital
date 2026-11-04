@@ -1,6 +1,6 @@
 # Eventos de triage (`triaje.eventos`)
 
-Contrato de los eventos que `triage-service` deja en la tabla `outbox_eventos` y (en el siguiente paso) publica en Kafka.
+Contrato de los eventos que `triage-service` deja en la tabla `outbox_eventos` y el publicador del outbox envia a Kafka.
 Los consume `clinical-assistant-service` para mantener el estado de urgencias en Redis **sin llamar a la API de triage**.
 
 ## Envelope
@@ -30,13 +30,25 @@ Los consume `clinical-assistant-service` para mantener el estado de urgencias en
 | Campo | Tipo | Descripcion |
 |-------|------|-------------|
 | `eventId` | UUID | Identificador unico del evento. **Es el mismo `id` de la fila en `outbox_eventos`.** El consumidor lo usa para deduplicar (idempotencia). |
-| `eventType` | string | `paciente_registrado`, `paciente_en_consulta`, `paciente_alta` (y `paciente_escalado`, que emitira el scheduler de RF-03). Minusculas con guion bajo. |
+| `eventType` | string | `paciente_registrado`, `paciente_en_consulta`, `paciente_alta` y `paciente_escalado` (lo emite el proceso de escalamiento por SLA, RF-03). Minusculas con guion bajo. |
 | `occurredAt` | ISO 8601 UTC | Instante del cambio de negocio (no el de publicacion). Es el mismo de la fila de auditoria. |
 | `version` | int | Version del esquema del envelope (`triage.kafka.event-version`, hoy `1`). Cambios incompatibles suben este numero. |
 | `correlationId` | string | `X-Correlation-Id` de la peticion HTTP que origino el cambio (o el generado por el servicio). `sin-correlacion` si el cambio no nacio de una peticion. |
 | `payload` | objeto | Ver abajo. |
 
-**Clave del mensaje Kafka** = `payload.pacienteId` (garantiza orden por paciente). En la tabla es `outbox_eventos.aggregate_id`.
+## Mensaje Kafka
+
+Topic `triaje.eventos` (DLT: `triaje.eventos.DLT`).
+
+| Parte | Valor |
+|-------|-------|
+| **Key** | `payload.pacienteId` (garantiza orden por paciente dentro de la particion). En la tabla es `outbox_eventos.aggregate_id`. |
+| **Value** | el envelope JSON completo, tal como esta en `outbox_eventos.payload` (no se vuelve a serializar). |
+| **Header `eventId`** | el mismo `eventId` del envelope (permite deduplicar sin parsear el cuerpo). |
+| **Header `eventType`** | el mismo `eventType` (permite filtrar sin parsear el cuerpo). |
+| **Header `correlationId`** | el `correlationId` del envelope (vacio si no lo hay). |
+
+El productor es idempotente (`acks=all`, `enable.idempotence=true`).
 
 ## Payload
 
@@ -69,8 +81,26 @@ El consumidor mantiene un contador por `nivel` aplicando cada evento una sola ve
 
 Como el payload trae `estadoAnterior` y `estadoNuevo`, el consumidor puede derivar tambien el desglose por estado sin consultar la API.
 
+## paciente_escalado (RF-03, RN-03)
+
+Lo emite el proceso de escalamiento cuando un paciente `REGISTRADO` supera su SLA. **No cambia el estado**:
+`estadoAnterior = estadoNuevo = "REGISTRADO"` y `escalado = true`; `fechaCambioEstado` sigue siendo la del ultimo cambio
+de estado real (el escalamiento no reinicia el tiempo en estado). `occurredAt` es el instante del escalamiento y su
+`correlationId` es el del ciclo de fondo (`escalamiento-sla-xxxxxxxx`). Se emite **a lo sumo una vez por paciente**.
+Para el conteo de activos no tiene efecto (ver tabla anterior).
+
+## Consumidores
+
+| Consumidor | Grupo | Que hace |
+|------------|-------|----------|
+| `clinical-assistant-service` | propio | Reconstruye el estado de urgencias en Redis (dedupe por `eventId`). |
+| `triage-service` (alertas, RF-06) | `triage-alertas` | Procesa **solo** `paciente_escalado` y alerta por SSE y webhook (ver ADR 0002). Mensajes ilegibles → `triaje.eventos.DLT` sin reintentos. |
+
 ## Garantias
 
 - **Atomicidad:** el cambio de estado, su fila de auditoria y la fila del outbox se escriben en una sola transaccion R2DBC; si falla cualquier paso no queda nada.
-- **Entrega al menos una vez:** el publicador (siguiente paso) marca `published_at` tras el ack de Kafka; un reintento puede duplicar un evento, por eso el consumidor deduplica por `eventId`.
+- **Entrega al menos una vez:** el publicador marca `published_at` tras el ack de Kafka; un reintento (o una caida entre el ack y el marcado) puede duplicar un evento, por eso el consumidor deduplica por `eventId`.
+- **Publicador seguro con varias replicas:** lee el lote con `SELECT ... FOR UPDATE SKIP LOCKED` dentro de una transaccion que dura mientras se publica, y solo entrega el evento **mas antiguo pendiente de cada paciente**, asi que dos replicas no publican el mismo evento ni invierten el orden de un paciente.
+- **Kafka caido:** el registro de pacientes no falla. El evento queda pendiente: cada fallo suma un intento y guarda el motivo, y se reintenta con backoff exponencial (`backoff-inicial * 2^(intentos-1)`, tope `backoff-maximo`). Al llegar a `max-intentos` deja de reintentarse y **bloquea los eventos posteriores de ese paciente** (para no desordenar); queda en `outbox_eventos` para revision manual (log `ERROR` y fuera del gauge de pendientes).
+- **Metricas:** `triage.outbox.publicados`, `triage.outbox.fallos` (contadores) y `triage.outbox.pendientes` (gauge, se actualiza cada ciclo).
 - **Orden:** garantizado por paciente (misma clave de particion), no entre pacientes.

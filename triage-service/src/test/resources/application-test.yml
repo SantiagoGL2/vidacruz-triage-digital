@@ -1,17 +1,42 @@
 # Perfil de pruebas. Las URLs de DB/Kafka las inyectan los Testcontainers (@DynamicPropertySource).
+# Los procesos de fondo y el consumidor de alertas arrancan APAGADOS: cada test los dispara explicitamente o los
+# enciende en su propia clase (con @DirtiesContext para que no sigan vivos en el cache de contextos).
 spring:
   r2dbc:
     password: test-only
   flyway:
     password: test-only
+  kafka:
+    producer:
+      properties:
+        # Con Kafka caido el envio debe fallar rapido, no a los 10 s / 60 s por defecto
+        max.block.ms: 3000
+        request.timeout.ms: 3000
+        delivery.timeout.ms: 5000
 triage:
   security:
     api-key: test-api-key
-  escalamiento:
-    habilitado: false     # los tests disparan el escalamiento explicitamente
-    intervalo: PT1S
+  sla:
+    habilitado: false
+    intervalo-evaluacion: PT0.5S
   outbox:
     habilitado: false
+    intervalo: PT0.5S
+    backoff-inicial: PT0.2S
+    backoff-maximo: PT1S
+    timeout-publicacion: PT6S
+  alertas:
+    consumidor:
+      habilitado: false
+      reintentos: 2
+      backoff-inicial: PT0.2S
+      backoff-maximo: PT0.5S
+    sse:
+      heartbeat: PT1S
+    webhook:
+      timeout: PT2S
+      intentos: 2
+      espera-reintento: PT0.1S
 management:
   otlp:
     tracing:

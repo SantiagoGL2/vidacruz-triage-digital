@@ -17,8 +17,22 @@ import com.vidacruz.triage.domain.service.PoliticaSla;
 import com.vidacruz.triage.domain.service.PoliticaSlaEstandar;
 import com.vidacruz.triage.domain.service.QuejasAdministrativas;
 import com.vidacruz.triage.domain.service.RegistradorPacientes;
+import com.vidacruz.triage.application.port.in.EscalarPacientesVencidosUseCase;
+import com.vidacruz.triage.application.port.in.NotificarEscalamientoUseCase;
+import com.vidacruz.triage.application.port.in.PublicarEventosPendientesUseCase;
+import com.vidacruz.triage.application.port.in.SuscribirAlertasUseCase;
+import com.vidacruz.triage.application.usecase.EscalarPacientesVencidosUseCaseImpl;
+import com.vidacruz.triage.application.usecase.NotificarEscalamientoUseCaseImpl;
+import com.vidacruz.triage.application.usecase.PublicarEventosPendientesUseCaseImpl;
+import com.vidacruz.triage.application.usecase.SuscribirAlertasUseCaseImpl;
+import com.vidacruz.triage.domain.model.PoliticaReintentoOutbox;
+import com.vidacruz.triage.domain.port.out.DeduplicacionEventosPort;
+import com.vidacruz.triage.domain.port.out.FlujoAlertasPort;
+import com.vidacruz.triage.domain.port.out.NotificadorAlertasPort;
+import com.vidacruz.triage.domain.port.out.PublicadorEventosPort;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -75,6 +89,35 @@ public class ApplicationConfig {
 	@Bean
 	ConsultarPacienteUseCase consultarPacienteUseCase(PacienteRepositoryPort pacientes, Clock clock) {
 		return new ConsultarPacienteUseCaseImpl(pacientes, clock);
+	}
+
+	@Bean
+	EscalarPacientesVencidosUseCase escalarPacientesVencidosUseCase(PacienteRepositoryPort pacientes,
+			AuditoriaRepositoryPort auditoria, OutboxRepositoryPort outbox, FabricaEventos fabricaEventos,
+			TransaccionPort transaccion, MetricasPort metricas, Clock clock, TriageSlaProperties sla) {
+		return new EscalarPacientesVencidosUseCaseImpl(pacientes, auditoria, outbox, fabricaEventos, transaccion, metricas,
+				clock, sla.lote());
+	}
+
+	@Bean
+	PublicarEventosPendientesUseCase publicarEventosPendientesUseCase(OutboxRepositoryPort outbox,
+			PublicadorEventosPort publicador, TransaccionPort transaccion, MetricasPort metricas, Clock clock,
+			TriageOutboxProperties propiedades) {
+		var politica = new PoliticaReintentoOutbox(propiedades.maxIntentos(), propiedades.backoffInicial(),
+				propiedades.backoffMaximo());
+		return new PublicarEventosPendientesUseCaseImpl(outbox, publicador, transaccion, metricas, clock,
+				propiedades.batchSize(), politica);
+	}
+
+	@Bean
+	NotificarEscalamientoUseCase notificarEscalamientoUseCase(DeduplicacionEventosPort deduplicacion,
+			List<NotificadorAlertasPort> canales) {
+		return new NotificarEscalamientoUseCaseImpl(deduplicacion, canales);
+	}
+
+	@Bean
+	SuscribirAlertasUseCase suscribirAlertasUseCase(FlujoAlertasPort flujo) {
+		return new SuscribirAlertasUseCaseImpl(flujo);
 	}
 
 }

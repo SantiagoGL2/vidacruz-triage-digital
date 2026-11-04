@@ -39,7 +39,14 @@ spring:
       acks: all
       properties:
         enable.idempotence: true
-        delivery.timeout.ms: ${KAFKA_DELIVERY_TIMEOUT_MS:30000}
+        delivery.timeout.ms: ${KAFKA_DELIVERY_TIMEOUT_MS:10000}
+        request.timeout.ms: ${KAFKA_REQUEST_TIMEOUT_MS:5000}
+        max.block.ms: ${KAFKA_MAX_BLOCK_MS:5000}
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
 
 server:
   port: ${SERVER_PORT:8080}
@@ -91,8 +98,13 @@ triage:
   kafka:
     topic: ${TRIAGE_KAFKA_TOPIC:triaje.eventos}
     event-version: 1
-  # RN-02: SLA en minutos por nivel (sobrescribibles para probar el escalamiento sin esperar decenas de minutos)
+  # RN-02: SLA en minutos por nivel (sobrescribibles para probar el escalamiento sin esperar decenas de minutos).
+  # El SLA se congela en el paciente al registrarlo: cambiar esto solo afecta a pacientes NUEVOS.
+  # RF-03: el proceso de fondo evalua cada `intervalo-evaluacion` los pacientes REGISTRADO cuyo SLA vencio.
   sla:
+    habilitado: ${TRIAGE_SLA_HABILITADO:true}
+    intervalo-evaluacion: ${TRIAGE_SLA_INTERVALO_EVALUACION:PT30S}
+    lote: ${TRIAGE_SLA_LOTE:100}
     minutos:
       CRITICO: ${TRIAGE_SLA_CRITICO:5}
       URGENTE: ${TRIAGE_SLA_URGENTE:10}
@@ -108,14 +120,31 @@ triage:
       - renovación de recetario
       - vacunación
       - seguimiento
-  # RF-03: scheduler de escalamiento
-  escalamiento:
-    habilitado: ${TRIAGE_ESCALAMIENTO_HABILITADO:true}
-    intervalo: ${TRIAGE_ESCALAMIENTO_INTERVALO:PT30S}
-    batch-size: ${TRIAGE_ESCALAMIENTO_BATCH:100}
-  # Publicador del Transactional Outbox
+  # Publicador del Transactional Outbox (outbox_eventos -> Kafka). FOR UPDATE SKIP LOCKED: seguro con varias replicas.
   outbox:
     habilitado: ${TRIAGE_OUTBOX_HABILITADO:true}
     intervalo: ${TRIAGE_OUTBOX_INTERVALO:PT1S}
     batch-size: ${TRIAGE_OUTBOX_BATCH:100}
     max-intentos: ${TRIAGE_OUTBOX_MAX_INTENTOS:10}
+    backoff-inicial: ${TRIAGE_OUTBOX_BACKOFF_INICIAL:PT2S}     # espera tras el 1.er fallo; se duplica en cada intento
+    backoff-maximo: ${TRIAGE_OUTBOX_BACKOFF_MAXIMO:PT1M}
+    timeout-publicacion: ${TRIAGE_OUTBOX_TIMEOUT:PT10S}
+  # RF-06: alertas de escalamiento al equipo medico (consumidor Kafka -> SSE + webhook)
+  alertas:
+    consumidor:
+      habilitado: ${TRIAGE_ALERTAS_HABILITADO:true}
+      group-id: ${TRIAGE_ALERTAS_GROUP:triage-alertas}
+      reintentos: ${TRIAGE_ALERTAS_REINTENTOS:4}               # antes de enviar a la DLT
+      backoff-inicial: ${TRIAGE_ALERTAS_BACKOFF_INICIAL:PT1S}
+      backoff-maximo: ${TRIAGE_ALERTAS_BACKOFF_MAXIMO:PT10S}
+      capacidad-deduplicacion: ${TRIAGE_ALERTAS_DEDUP:10000}   # eventId recordados en memoria
+    sse:
+      heartbeat: ${TRIAGE_ALERTAS_SSE_HEARTBEAT:PT15S}
+    webhook:
+      url: ${TRIAGE_ALERTAS_WEBHOOK_URL:}                      # vacio = deshabilitado
+      timeout: ${TRIAGE_ALERTAS_WEBHOOK_TIMEOUT:PT3S}
+      intentos: ${TRIAGE_ALERTAS_WEBHOOK_INTENTOS:3}
+      espera-reintento: ${TRIAGE_ALERTAS_WEBHOOK_ESPERA:PT0.5S}
+      ventana-circuit-breaker: 10
+      umbral-fallos: 50
+      espera-circuito-abierto: PT30S

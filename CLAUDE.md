@@ -23,7 +23,7 @@ vidacruz-triage-digital/
 └── .env.example               variables (copiar a .env, que está en .gitignore)
 ```
 
-Un solo repo git y un solo `.gitignore` en la raíz. **No hay `settings.gradle` en la raíz**: cada servicio tiene su propio wrapper y se construye/despliega por separado. DSL Gradle: **Groovy** (`build.gradle`) en ambos.
+Un solo repo git y un solo `.gitignore` en la raíz. La raíz tiene un `settings.gradle` **solo como composite build** (`includeBuild` de ambos servicios, para que IntelliJ los detecte) y un `build.gradle` mínimo con agregadores; no es multi-módulo: cada servicio tiene su propio wrapper y se construye/despliega por separado (los Dockerfiles usan la carpeta del servicio como contexto). DSL Gradle: **Groovy** (`build.gradle`) en ambos.
 
 ## Decisiones de arquitectura (respetarlas)
 
@@ -39,7 +39,7 @@ Un solo repo git y un solo `.gitignore` en la raíz. **No hay `settings.gradle` 
 - **Redis Stack:** vector store (Spring AI) + vista materializada de estado-urgencias.
 - **Seguridad:** API key por header `X-API-Key` con `WebFilter` de Spring Security, valores por variables de entorno. **Ninguna credencial hardcodeada**. Solo `/actuator/health/**` es público.
 - **Observabilidad:** Actuator (liveness/readiness), Micrometer + Prometheus, logs JSON estructurados (nativo de Boot: `logging.structured.format.console=logstash`) con `correlationId`/`traceId`, OpenTelemetry (OTLP, desactivado por defecto). Propagación de contexto Reactor → MDC con `context-propagation`.
-- **Stack:** Java 21 (toolchain), Spring Boot **3.5.x**, Spring AI **1.1.x** (la 2.x exige Boot 4), Resilience4j 2.4 (`resilience4j-spring-boot3` + `resilience4j-reactor`), Flyway, Testcontainers 1.21.x.
+- **Stack:** Java 21 (toolchain), Spring Boot **3.5.x**, Spring AI **1.1.x** (la 2.x exige Boot 4), Resilience4j 2.4 (`resilience4j-spring-boot3` + `resilience4j-reactor`), Flyway, Testcontainers **2.0.5**.
 
 ## Convenciones de código
 
@@ -73,6 +73,16 @@ Ejecutar dentro de cada servicio (`cd triage-service` / `cd clinical-assistant-s
 ./gradlew bootJar -x test        # jar ejecutable (build/libs/)
 ```
 
+Desde la raíz (composite build; wrapper propio, misma versión de Gradle):
+
+```bash
+./gradlew assembleAll            # compilar + empaquetar ambos servicios SIN tests (-x test no cruza a builds incluidos)
+./gradlew buildAll               # build + tests de ambos
+./gradlew testAll                # solo tests de ambos
+./gradlew :triage-service:build  # un servicio concreto
+./gradlew :clinical-assistant-service:bootRun
+```
+
 Toda la plataforma (desde la raíz):
 
 ```bash
@@ -85,3 +95,10 @@ docker compose down -v           # apagar y borrar volúmenes
 Puertos del host: triage `8081`, asistente `8082`, PostgreSQL `5432`, Kafka (listener externo) `29092`, Redis `6379`, RedisInsight `8001`. Salud: `GET /actuator/health/readiness`.
 
 Perfiles: `local` (por defecto, hosts en localhost) · `docker` (hosts = nombres de servicio) · `test` (Testcontainers). Variables clave: ver `.env.example` (SLA por nivel `TRIAGE_SLA_*`, intervalo del scheduler `TRIAGE_ESCALAMIENTO_INTERVALO`, `LLM_*`, API keys).
+
+### Testcontainers 2.x (decisión)
+
+- Se fuerza `testcontainers.version = 2.0.5` en ambos `build.gradle` (`ext`), sobrescribiendo la 1.21.x que gestiona Spring Boot 3.5. Motivo: la 1.21.x (docker-java 3.4.x) falla con `Could not find a valid Docker environment` / `Status 500` contra Docker Engine reciente en Windows.
+- Artefactos 2.x con prefijo: `testcontainers-junit-jupiter`, `testcontainers-postgresql`, `testcontainers-r2dbc`, `testcontainers-kafka`. Clases movidas: `org.testcontainers.postgresql.PostgreSQLContainer` (ya no genérico); `KafkaContainer` en `org.testcontainers.kafka`.
+- **No usar `@ServiceConnection`** ni `spring-boot-testcontainers`: Boot 3.5 solo reconoce los contenedores 1.x. Las propiedades se inyectan con `@DynamicPropertySource`.
+- Los tests de integración extienden `AbstractIntegrationTest` y obtienen Postgres/Kafka de `Contenedores` (singletons por JVM, no un contenedor por clase).

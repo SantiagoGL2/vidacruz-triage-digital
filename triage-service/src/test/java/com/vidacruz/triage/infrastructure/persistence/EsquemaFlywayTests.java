@@ -11,23 +11,21 @@ import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
+import com.vidacruz.triage.support.Contenedores;
 
 /** Valida V1: la migracion aplica y las garantias de integridad (CHECKs, auditoria inmutable, escalamiento unico). */
-@Testcontainers
 class EsquemaFlywayTests {
 
-	@Container
-	static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+	/** Base propia dentro del Postgres compartido, para no mezclar sus datos con los del contexto Spring. */
+	static String url;
 
 	static final UUID PACIENTE = UUID.randomUUID();
 
 	@BeforeAll
 	static void migrar() throws SQLException {
+		url = Contenedores.jdbcUrlDeBaseNueva("esquema_flyway");
 		var resultado = Flyway.configure()
-				.dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+				.dataSource(url, Contenedores.postgres().getUsername(), Contenedores.postgres().getPassword())
 				.load().migrate();
 		assertThat(resultado.success).isTrue();
 		ejecutar("""
@@ -75,7 +73,7 @@ class EsquemaFlywayTests {
 	}
 
 	private static void ejecutar(String sql) throws SQLException {
-		try (Connection c = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+		try (Connection c = DriverManager.getConnection(url, Contenedores.postgres().getUsername(), Contenedores.postgres().getPassword());
 				Statement s = c.createStatement()) {
 			s.execute(sql);
 		}

@@ -12,15 +12,20 @@ spring:
     exclude:
       # La autenticacion es por API key (X-API-Key); no se genera usuario/clave en memoria.
       - org.springframework.boot.autoconfigure.security.reactive.ReactiveUserDetailsServiceAutoConfiguration
-      # Spring AI (modelo OpenAI + vector store en Redis Stack) llega con el RAG (RF-04 parte A). Mientras tanto no se
-      # autoconfigura: el vector store exige Redis Stack en el arranque y el modelo una LLM_API_KEY. Quitar estas lineas al implementarlo.
-      - org.springframework.ai.model.openai.autoconfigure.OpenAiChatAutoConfiguration
-      - org.springframework.ai.model.openai.autoconfigure.OpenAiEmbeddingAutoConfiguration
+      # Spring AI: se usan el modelo de chat y el de embeddings de OpenAI (autoconfigurados). Se excluye lo que no se usa
+      # (imagen, audio, moderacion) y el vector store de Redis: su autoconfiguracion en 1.1 exige un JedisConnectionFactory,
+      # no declara los campos de metadatos y crea el indice en el arranque (tumbaria la app si Redis o el proveedor fallan).
+      # El vector store se arma en RagConfig y el indice lo crea la indexacion en segundo plano.
       - org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration
       - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
       - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration
       - org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration
       - org.springframework.ai.vectorstore.redis.autoconfigure.RedisVectorStoreAutoConfiguration
+  http:
+    client:
+      # Timeouts del cliente HTTP hacia el proveedor (RestClient de Spring AI): un hilo no queda colgado si el proveedor no responde
+      connect-timeout: ${LLM_HTTP_CONNECT_TIMEOUT:3s}
+      read-timeout: ${LLM_HTTP_READ_TIMEOUT:30s}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -59,13 +64,10 @@ spring:
       embedding:
         options:
           model: ${LLM_EMBEDDING_MODEL:text-embedding-3-small}
-    vectorstore:
-      redis:
-        # Requiere Redis Stack (modulo RediSearch). La URI incluye la clave: formato redis://:password@host:port
-        uri: redis://:${REDIS_PASSWORD}@${REDIS_HOST:localhost}:${REDIS_PORT:6379}
-        index-name: ${ASSISTANT_VECTOR_INDEX:protocolos-idx}
-        prefix: ${ASSISTANT_VECTOR_PREFIX:protocolo:}
-        initialize-schema: ${ASSISTANT_VECTOR_INIT_SCHEMA:true}
+    retry:
+      # Los reintentos los hace Resilience4j (solo ante errores transitorios, con circuit breaker): el RetryTemplate
+      # interno de Spring AI (10 intentos, espera de hasta 3 min) se desactiva para que no se acumulen ambos.
+      max-attempts: 1
 
 # Documentacion OpenAPI y Swagger UI. En produccion se apagan con SWAGGER_HABILITADO=false (los perfiles
 # local y docker la encienden por defecto).
@@ -95,7 +97,9 @@ management:
         liveness:
           include: livenessState
         readiness:
-          include: readinessState,redis
+          # indiceProtocolos: UP cuando el indice del RAG esta indexado. Los circuit breakers NO estan aqui: un LLM caido
+          # no saca al servicio de la rotacion (la vista de urgencias sigue sirviendose).
+          include: readinessState,redis,indiceProtocolos
       show-details: when-authorized
   health:
     circuitbreakers:
@@ -128,35 +132,63 @@ logging:
 # ---------------------------------------------------------------------------
 resilience4j:
   circuitbreaker:
-    instances:
+    configs:
       llm:
         sliding-window-type: COUNT_BASED
         sliding-window-size: ${LLM_CB_WINDOW:20}
         minimum-number-of-calls: ${LLM_CB_MIN_CALLS:10}
         failure-rate-threshold: ${LLM_CB_FAILURE_RATE:50}
-        slow-call-duration-threshold: ${LLM_CB_SLOW_CALL:8s}
+        slow-call-duration-threshold: ${LLM_CB_SLOW_CALL:10s}
         slow-call-rate-threshold: 80
         wait-duration-in-open-state: ${LLM_CB_OPEN_WAIT:30s}
         permitted-number-of-calls-in-half-open-state: 3
         automatic-transition-from-open-to-half-open-enabled: true
-        register-health-indicator: true
-  retry:
+        register-health-indicator: false     # el estado se ve en /actuator/circuitbreakers y en Prometheus
+        # un fallo de Redis (no del proveedor) o un bulkhead lleno no cuentan como fallo del proveedor
+        ignore-exceptions:
+          - redis.clients.jedis.exceptions.JedisException
+          - io.github.resilience4j.bulkhead.BulkheadFullException
     instances:
+      llm-chat:
+        base-config: llm
+      llm-embedding:
+        base-config: llm
+  retry:
+    configs:
       llm:
         max-attempts: ${LLM_RETRY_MAX_ATTEMPTS:3}
         wait-duration: ${LLM_RETRY_WAIT:500ms}
         enable-exponential-backoff: true
         exponential-backoff-multiplier: 2
+        enable-randomized-wait: true          # jitter
+        randomized-wait-factor: 0.3
+        # solo transitorios: timeout, conexion/E-S, 5xx y 429. Nunca 4xx de configuracion ni errores de validacion
+        retry-exception-predicate: com.vidacruz.assistant.infrastructure.drivenadapter.ai.resilience.ErrorTransitorioProveedor
+    instances:
+      llm-chat:
+        base-config: llm
+      llm-embedding:
+        base-config: llm
   timelimiter:
-    instances:
+    configs:
       llm:
-        timeout-duration: ${LLM_TIMEOUT:15s}
+        timeout-duration: ${LLM_TIMEOUT:20s}
         cancel-running-future: true
-  bulkhead:
     instances:
+      llm-chat:
+        base-config: llm
+      llm-embedding:
+        base-config: llm
+  bulkhead:
+    configs:
       llm:
         max-concurrent-calls: ${LLM_BULKHEAD_MAX_CALLS:10}
         max-wait-duration: 0
+    instances:
+      llm-chat:
+        base-config: llm
+      llm-embedding:
+        base-config: llm
 
 # ---------------------------------------------------------------------------
 # Propiedades de negocio / operacion del asistente
@@ -185,7 +217,23 @@ assistant:
     ttl-deduplicacion: ${ASSISTANT_DEDUP_TTL:P7D}      # cuanto se recuerda un eventId ya procesado
     zona-horaria: ${ASSISTANT_ZONA_HORARIA:America/Bogota}
   # RAG
+  # RF-04 parte A: consulta de protocolos con RAG (RN-05)
   rag:
     top-k: ${ASSISTANT_RAG_TOP_K:4}
-    similarity-threshold: ${ASSISTANT_RAG_SIMILARITY_THRESHOLD:0.65}   # bajo este umbral -> "no existe protocolo disponible" (RN-05)
+    # Barrera 1: similitud minima (0..1) para que un fragmento cuente como relevante. Ver docs/asistente-rag.md.
+    similarity-threshold: ${ASSISTANT_RAG_SIMILARITY_THRESHOLD:0.75}
+    mensaje-sin-protocolo: ${ASSISTANT_RAG_MENSAJE_SIN_PROTOCOLO:No existe un protocolo disponible en el corpus oficial para responder esta pregunta.}
+    # Un archivo Markdown por protocolo. Para agregar uno: soltar el archivo en resources/protocolos (o apuntar a un directorio).
+    corpus: ${ASSISTANT_RAG_CORPUS:classpath:protocolos/*.md}
     ingest-on-startup: ${ASSISTANT_RAG_INGEST_ON_STARTUP:true}
+    # Modelo de los vectores del indice; entra en el hash de los fragmentos (cambiarlo reindexa). Debe coincidir con el de Spring AI.
+    modelo-embeddings: ${LLM_EMBEDDING_MODEL:text-embedding-3-small}
+    indice:
+      nombre: ${ASSISTANT_RAG_INDICE:asistente-protocolos-idx}
+      prefijo: ${ASSISTANT_RAG_PREFIJO:asistente:protocolo:}      # distinto del prefijo de la vista de urgencias
+    ingesta:
+      backoff-inicial: ${ASSISTANT_RAG_BACKOFF_INICIAL:2s}
+      backoff-maximo: ${ASSISTANT_RAG_BACKOFF_MAXIMO:1m}
+    retry-after:
+      proveedor: ${ASSISTANT_RAG_RETRY_AFTER_PROVEEDOR:30s}      # header Retry-After del 503 por proveedor caido
+      indice: ${ASSISTANT_RAG_RETRY_AFTER_INDICE:10s}            # ... y del 503 por indice en construccion

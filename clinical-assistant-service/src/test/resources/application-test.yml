@@ -1,4 +1,5 @@
-# Perfil de pruebas. Redis y Kafka los inyectan los Testcontainers (@DynamicPropertySource).
+# Perfil de pruebas. Redis y Kafka los inyectan los Testcontainers (@DynamicPropertySource); el proveedor de IA es un
+# WireMock que imita la API de OpenAI (su URL tambien se inyecta). Umbrales bajos para que los tests de resiliencia sean rapidos.
 spring:
   data:
     redis:
@@ -10,6 +11,13 @@ spring:
         max.block.ms: 3000
         request.timeout.ms: 3000
         delivery.timeout.ms: 5000
+  ai:
+    openai:
+      api-key: ${LLM_API_KEY:test-only-key}
+      base-url: ${LLM_BASE_URL:http://localhost:9}      # los tests con proveedor simulado lo sustituyen
+  http:
+    client:
+      read-timeout: 6s
 assistant:
   security:
     api-key: test-api-key
@@ -22,6 +30,33 @@ assistant:
       max-elapsed-time: 2m
   estado-urgencias:
     ttl-deduplicacion: PT1H
+  rag:
+    ingest-on-startup: true
+    ingesta:
+      backoff-inicial: 200ms
+      backoff-maximo: 1s
+    retry-after:
+      proveedor: 7s
+      indice: 3s
+resilience4j:
+  circuitbreaker:
+    configs:
+      llm:
+        sliding-window-size: 6
+        minimum-number-of-calls: 4
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 5s
+        slow-call-duration-threshold: 5s
+  retry:
+    configs:
+      llm:
+        max-attempts: 3
+        wait-duration: 50ms
+        exponential-backoff-multiplier: 1.5
+  timelimiter:
+    configs:
+      llm:
+        timeout-duration: 1500ms
 springdoc:
   api-docs:
     enabled: true

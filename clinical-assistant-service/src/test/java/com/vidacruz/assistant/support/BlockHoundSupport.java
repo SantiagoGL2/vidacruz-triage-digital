@@ -5,11 +5,12 @@ import reactor.blockhound.BlockHound;
 
 /**
  * Instala BlockHound una sola vez por JVM: cualquier llamada bloqueante en un hilo no bloqueante (event loop de
- * Netty/Lettuce, parallel, etc.) hace fallar el test. Los hilos de JUnit y boundedElastic no se vigilan.
+ * Netty/Lettuce, parallel, etc.) hace fallar el test. Los hilos de JUnit y boundedElastic no se vigilan (ahi corren las
+ * llamadas de Spring AI y Jedis, envueltas con subscribeOn(boundedElastic)).
  * <p>
  * Las excepciones de abajo son bloqueos conocidos e inofensivos de librerias (no del codigo del proyecto):
- * el logging sincrono a consola, la semilla perezosa de UUID.randomUUID, la carga perezosa de clases y la
- * generacion (unica, cacheada) del OpenAPI de springdoc.
+ * el logging sincrono a consola, la semilla perezosa de UUID.randomUUID, la carga perezosa de clases, la generacion
+ * (unica, cacheada) del OpenAPI de springdoc y el lock de microsegundos de la ventana del CircuitBreaker de Resilience4j.
  */
 public final class BlockHoundSupport {
 
@@ -27,6 +28,12 @@ public final class BlockHoundSupport {
 					.allowBlockingCallsInside("ch.qos.logback.core.AppenderBase", "doAppend")
 					.allowBlockingCallsInside("ch.qos.logback.core.OutputStreamAppender", "subAppend")
 					.allowBlockingCallsInside("java.util.UUID", "randomUUID")
+					// Resilience4j registra cada llamada en una ventana deslizante protegida por un ReentrantLock que se
+					// mantiene microsegundos; con llamadas simultaneas puede hacer park() en un hilo de Netty (falso positivo)
+					.allowBlockingCallsInside("io.github.resilience4j.core.metrics.FixedSizeSlidingWindowMetrics", "record")
+					.allowBlockingCallsInside("io.github.resilience4j.circuitbreaker.internal.CircuitBreakerStateMachine", "onError")
+					.allowBlockingCallsInside("io.github.resilience4j.circuitbreaker.internal.CircuitBreakerStateMachine", "onSuccess")
+					.allowBlockingCallsInside("io.github.resilience4j.circuitbreaker.internal.CircuitBreakerStateMachine", "acquirePermission")
 					// springdoc genera el documento OpenAPI de forma perezosa en la primera peticion a /v3/api-docs
 					.allowBlockingCallsInside("org.springdoc.api.AbstractOpenApiResource", "getOpenApi")
 					// recurso estatico de Swagger UI (jar de webjars): limitacion del resolver de recursos de WebFlux

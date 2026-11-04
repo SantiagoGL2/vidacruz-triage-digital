@@ -165,7 +165,7 @@ docker compose up -d postgres kafka kafka-init redis   # solo infraestructura, p
 docker compose down -v           # apagar y borrar volúmenes
 ```
 
-Swagger UI: `http://localhost:8081/swagger-ui.html` (triage) · contrato OpenAPI: `/v3/api-docs`. Pulsar *Authorize* y pegar `TRIAGE_API_KEY`.
+Swagger UI: `http://localhost:8081/swagger-ui.html` (triage) y `http://localhost:8082/swagger-ui.html` (asistente) · contrato OpenAPI: `/v3/api-docs`. Pulsar *Authorize* y pegar `TRIAGE_API_KEY`.
 
 Puertos del host: triage `8081`, asistente `8082`, PostgreSQL `5432`, Kafka (listener externo) `29092`, Redis `6379`, RedisInsight `8001`. Salud: `GET /actuator/health/readiness`.
 
@@ -192,6 +192,9 @@ Perfiles: `local` (por defecto, hosts en localhost) · `docker` (hosts = nombres
 - **Listener síncrono por registro, no `Mono`** (igual que el consumidor de alertas de triage): ADR 0004. **No cambiar a `Mono` sin repetir los tests de Redis caído y de DLT.**
 - **Errores:** `ErrorHandlingDeserializer` + JSON; ilegible o incompleto → `triaje.eventos.DLT` directo; Redis caído → backoff exponencial y offset sin confirmar; `eventType` desconocido → ignorado (no DLT). `auto.offset.reset=earliest`: el topic debe retener los eventos de los pacientes activos (sin `compact`).
 - **Redis:** prefijo `asistente:urgencias:` (`ASSISTANT_REDIS_PREFIX`) para no chocar con el vector store del RAG. Spring AI está excluido del autoconfigurado hasta implementar el RAG (RF-04 parte A).
+- **RAG (RF-04 parte A):** `ConsultarProtocoloUseCaseImpl` orquesta `BuscadorProtocolosPort` → `GeneradorRespuestaPort` → `ValidadorRespuesta` (tres barreras de RN-05; detalle en `docs/asistente-rag.md`). Corpus en `resources/protocolos/*.md` (soltar un archivo = nuevo protocolo); fragmentación por sección; vector store Redis Stack armado a mano en `RagConfig` (ADR 0005). La indexación corre en segundo plano con backoff (`IndexacionProtocolosArranque`) y expone el indicador de readiness `indiceProtocolos`. El umbral de similitud (0.75) está **medido con OpenAI real**; el hash de cada fragmento incluye el modelo de embeddings (cambiarlo reindexa). Al agregar protocolos o cambiar de modelo, repetir `ProveedorRealTests` (`LLM_API_KEY=… ./gradlew cleanTest test --tests '*ProveedorRealTests' -i`).
+- **Llamadas al proveedor de IA:** siempre por `ProtectorLlm` (`subscribeOn(boundedElastic)` + Bulkhead/TimeLimiter/CircuitBreaker/Retry, instancias `llm-chat` y `llm-embedding`). Los reintentos propios de Spring AI están apagados; el Retry solo repite transitorios (`ErrorTransitorioProveedor`). Falla final → `AsistenteNoDisponibleException` → 503. **La validación de la respuesta va fuera de las llamadas protegidas** (no cuenta como falla del circuit breaker).
+- **Tests del RAG:** el proveedor es un WireMock compartido (`ProveedorLlmSimulado`: embeddings deterministas por palabras clave + chat por reglas); `AbstractIntegrationTest` lo reinicia y cierra los circuit breakers antes de cada test. `ProveedorRealTests` (opcional, `LLM_API_KEY`) calibra el umbral. Para tests que arrancan con el proveedor caído, sobreescribir `esperarIndiceListo()`.
 - **Local:** el perfil `local` del asistente importa el `.env` de la raíz (`spring.config.import`), así que `./gradlew bootRun` basta con `docker compose up -d postgres kafka kafka-init redis`. Swagger UI: `http://localhost:8082/swagger-ui.html`.
 - **Tests:** `AbstractIntegrationTest` (Redis `redis/redis-stack-server` + Kafka compartidos, BlockHound, Redis vaciado antes de cada test), `KafkaDePrueba` (productor, lector de DLT, lag del grupo), `EventosTriaje` (eventos con el formato de `docs/eventos.md`). Los tests de Redis caído usan `docker pause` sobre el contenedor compartido y lo reanudan en `finally`.
 

@@ -84,10 +84,10 @@ class ArquitecturaTests {
 
 	/** Lo mismo para el consumidor Kafka: solo llama casos de uso por su puerto de entrada. */
 	@ArchTest
-	static final ArchRule consumidoresSoloPasanPorLosPuertosDeEntrada = noClasses().that().resideInAnyPackage("..entrypoint.kafka..")
+	static final ArchRule consumidoresSoloPasanPorLosPuertosDeEntrada = noClasses().that().resideInAnyPackage("..entrypoint.kafka..", "..entrypoint.scheduler..")
 			.should().dependOnClassesThat().resideInAnyPackage(
 					"..infrastructure.drivenadapter..", "..domain.port.out..", "..application.usecase..")
-			.as("el consumidor Kafka solo usa application.port.in");
+			.as("el consumidor Kafka y los procesos de fondo solo usan application.port.in");
 
 	@ArchTest
 	static final ArchRule entrypointNoConoceDrivenAdapters = noClasses().that().resideInAPackage("..infrastructure.entrypoint..")

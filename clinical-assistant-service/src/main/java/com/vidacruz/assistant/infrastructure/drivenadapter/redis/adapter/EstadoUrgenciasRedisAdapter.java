@@ -142,19 +142,19 @@ class EstadoUrgenciasRedisAdapter implements EstadoUrgenciasPort {
 	}
 
 	/**
-	 * Transitorio = Redis no responde (conexion, timeout). Un error del propio script
-	 * (RedisCommandExecutionException) es un bug y no se disfraza de "no disponible".
+	 * Transitorio = Redis no responde (conexion, timeout). Segun el comando, el fallo llega traducido por Spring
+	 * (DataAccessException) o como excepcion cruda de Lettuce (p. ej. RedisCommandTimeoutException), asi que se aceptan
+	 * ambas. Un error del propio script (RedisCommandExecutionException) es un bug y no se disfraza de "no disponible".
 	 */
 	private static boolean esTransitorio(Throwable e) {
-		if (!(e instanceof DataAccessException)) {
-			return false;
-		}
+		boolean redis = false;
 		for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
 			if (t instanceof RedisCommandExecutionException) {
 				return false;
 			}
+			redis |= t instanceof DataAccessException || t instanceof io.lettuce.core.RedisException;
 		}
-		return true;
+		return redis;
 	}
 
 	private static EstadoUrgenciasNoDisponibleException noDisponible(String accion, Throwable causa) {

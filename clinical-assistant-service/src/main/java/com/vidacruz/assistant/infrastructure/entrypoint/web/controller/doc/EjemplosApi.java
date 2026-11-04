@@ -52,4 +52,60 @@ public final class EjemplosApi {
 			}
 			""";
 
+	// ---------------------------------------------------------------- POST /asistente/consulta
+
+	public static final String CONSULTA_RESPONDIDA = """
+			{
+			  "respuesta": "Reconfirmar la presión tras 5 minutos de reposo. No reducir la presión más de un 25% en la primera hora. Vigilar signos de encefalopatía.",
+			  "fuentes": [ { "protocolo": "PROTO-001", "seccion": "Medidas iniciales" } ]
+			}
+			""";
+
+	public static final String CONSULTA_SIN_PROTOCOLO = """
+			{
+			  "respuesta": "No existe un protocolo disponible en el corpus oficial para responder esta pregunta.",
+			  "fuentes": []
+			}
+			""";
+
+	public static final String ERROR_400_CONSULTA = """
+			{
+			  "type": "urn:vidacruz:asistente:problema:validacion",
+			  "title": "Datos invalidos",
+			  "status": 400,
+			  "detail": "Hay 1 dato(s) invalido(s): pregunta",
+			  "instance": "/asistente/consulta",
+			  "correlationId": "demo-001",
+			  "timestamp": "2026-11-04T15:17:57.285937Z",
+			  "errores": [
+			    { "campo": "pregunta", "valor": "hola", "mensaje": "debe tener entre 5 y 500 caracteres" }
+			  ]
+			}
+			""";
+
+	public static final String ERROR_503_LLM = """
+			{
+			  "type": "urn:vidacruz:asistente:problema:asistente-no-disponible",
+			  "title": "Asistente clínico no disponible",
+			  "status": 503,
+			  "detail": "El asistente clínico no está disponible temporalmente; consulte los protocolos impresos",
+			  "instance": "/asistente/consulta",
+			  "correlationId": "demo-001",
+			  "timestamp": "2026-11-04T15:17:57.285937Z",
+			  "operacion": "chat"
+			}
+			""";
+
+	public static final String ERROR_503_INDICE = """
+			{
+			  "type": "urn:vidacruz:asistente:problema:indice-no-disponible",
+			  "title": "Índice de protocolos no disponible",
+			  "status": 503,
+			  "detail": "El asistente clínico se está preparando (indexando los protocolos); reintente en unos segundos. Mientras tanto, consulte los protocolos impresos",
+			  "instance": "/asistente/consulta",
+			  "correlationId": "demo-001",
+			  "timestamp": "2026-11-04T15:17:57.285937Z"
+			}
+			""";
+
 }

@@ -40,10 +40,29 @@ Toda la plataforma: `docker compose up --build`. Detalle de comandos y convencio
 * `GET /asistente/estado-urgencias` — pacientes activos por nivel y escalados, reconstruidos desde `triaje.eventos` (RF-04 parte B, [ADR 0003](docs/adr/0003-envelope-de-eventos-duplicado-entre-servicios.md)).
 * `./gradlew bootRun` en `clinical-assistant-service` lee el `.env` de la raíz (perfil `local`).
 
+### Consulta de protocolos con IA (RAG)
+
+`POST /asistente/consulta` `{ "pregunta": "..." }` → `{ "respuesta": "...", "fuentes": [ { "protocolo": "PROTO-001", "seccion": "Medidas iniciales" } ] }`.
+Siempre con fuente del corpus (RN-05); si no hay protocolo relevante responde el aviso de «no existe protocolo disponible» con `fuentes: []`, sin llamar al LLM.
+Flujo, prompt, umbral y resiliencia: [`docs/asistente-rag.md`](docs/asistente-rag.md) · vector store: [ADR 0005](docs/adr/0005-redis-stack-como-vector-store-y-fragmentacion-por-seccion.md).
+
+* **Proveedor (por defecto):** cualquier API compatible con OpenAI. Modelo de chat `gpt-4o-mini` y embeddings `text-embedding-3-small` (1536 dimensiones), temperatura 0.
+  Se cambia con variables de entorno / `.env`: `LLM_API_KEY` (obligatoria, nunca se versiona), `LLM_BASE_URL` (OpenAI, Azure OpenAI vía gateway, Groq, vLLM, Ollama…),
+  `LLM_CHAT_MODEL` y `LLM_EMBEDDING_MODEL`. Si cambias el modelo de embeddings: recalibra `ASSISTANT_RAG_SIMILARITY_THRESHOLD` (hoy 0.75, medido con `text-embedding-3-small`; tabla en `docs/asistente-rag.md`). Un cambio de modelo reindexa solo; si cambia la dimensión de los vectores, borra además el índice
+  (`FT.DROPINDEX asistente-protocolos-idx DD` en Redis). Validado contra OpenAI real (`gpt-4o-mini` + `text-embedding-3-small`) además de con un proveedor simulado en los tests.
+* **Agregar un protocolo:** suelta un archivo `PROTO-NNN.md` en `clinical-assistant-service/src/main/resources/protocolos/` con el encabezado
+  (`---` / `id: PROTO-NNN` / `titulo: …` / `version: 1.0` / `---`) y una sección `## Apartado` por apartado, y reinicia el servicio: se indexa solo (idempotente).
+  También se puede apuntar a un directorio externo con `ASSISTANT_RAG_CORPUS=file:/ruta/*.md`.
+* **Probar contra el proveedor real (opcional):** `LLM_API_KEY=sk-... ./gradlew test --tests '*ProveedorRealTests' -i` desde `clinical-assistant-service`
+  (necesita Docker; ejecuta las 3 consultas de ejemplo y verifica las fuentes; también imprime las similitudes para calibrar el umbral). Sin `LLM_API_KEY` se omite.
+* **Modo degradado:** si el proveedor no responde, `503` con «El asistente clínico no está disponible temporalmente; consulte los protocolos impresos». El resto del servicio
+  (`/asistente/estado-urgencias`) y la readiness no se ven afectados.
+
 ## Documentación
 
 * [`docs/enunciado.md`](docs/enunciado.md) — requerimientos y reglas de negocio.
 * [`docs/supuestos.md`](docs/supuestos.md) — decisiones y supuestos.
 * [`docs/eventos.md`](docs/eventos.md) — contrato de los eventos Kafka (`triaje.eventos`).
+* [`docs/asistente-rag.md`](docs/asistente-rag.md) — el RAG del asistente: barreras anti-alucinación, prompt, umbral, resiliencia.
 * [`docs/reporte-operacion.md`](docs/reporte-operacion.md) — la consulta SQL del RF-05 explicada, supuestos y EXPLAIN.
 * [`docs/adr/`](docs/adr/) — decisiones de arquitectura.

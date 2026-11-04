@@ -3,35 +3,46 @@ package com.vidacruz.triage.infrastructure.entrypoint.web.dto.response;
 import com.vidacruz.triage.application.result.PacienteConsultado;
 import com.vidacruz.triage.domain.model.Paciente;
 import com.vidacruz.triage.domain.model.SignosVitales;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
 /** Vista completa del paciente (GET y respuesta del PATCH). */
+@Schema(description = "Datos completos del paciente, su estado actual y el tiempo en ese estado")
 public record PacienteResponse(
-		UUID id,
-		String nombreCompleto,
-		int edad,
+		@Schema(description = "Identificador del paciente", example = "e62f5bb0-848c-4343-9887-19cc8fcf3a0a") UUID id,
+		@Schema(description = "Nombre completo", example = "Carlos Andrés Pérez") String nombreCompleto,
+		@Schema(description = "Edad en años", example = "58", minimum = "0", maximum = "120") int edad,
 		SignosVitalesResponse signosVitales,
-		String quejaPrincipal,
-		String nivel,
-		int nivelNumero,
-		int slaMinutos,
-		String estado,
-		boolean escalado,
-		Instant fechaEscalamiento,
-		Instant fechaRegistro,
-		Instant fechaPrimeraConsulta,
-		Instant fechaUltimoCambioEstado,
-		long tiempoEnEstadoSegundos,
-		long tiempoEnEstadoMinutos) {
+		@Schema(description = "Queja principal", example = "Dolor torácico") String quejaPrincipal,
+		@Schema(description = "Nivel de triaje (RN-01)", example = "CRITICO",
+				allowableValues = {"CRITICO", "URGENTE", "URGENTE_2", "NO_URGENTE", "NO_URGENTE_2"}) String nivel,
+		@Schema(description = "Nivel numérico (1 = más grave)", example = "1", minimum = "1", maximum = "5") int nivelNumero,
+		@Schema(description = "SLA en minutos congelado al registrar (RN-02)", example = "5") int slaMinutos,
+		@Schema(description = "Estado clínico actual", example = "EN_CONSULTA",
+				allowableValues = {"REGISTRADO", "EN_CONSULTA", "ALTA"}) String estado,
+		@Schema(description = "true si superó su SLA sin entrar a consulta y fue escalado (RF-03); persistente", example = "false") boolean escalado,
+		@Schema(description = "Instante del escalamiento; null si no fue escalado", nullable = true) Instant fechaEscalamiento,
+		@Schema(description = "Instante del registro", example = "2026-11-04T15:17:57.285937Z") Instant fechaRegistro,
+		@Schema(description = "Instante de la primera entrada a consulta; null si aún no entró", nullable = true) Instant fechaPrimeraConsulta,
+		@Schema(description = "Instante del último cambio de estado", example = "2026-11-04T15:21:10.402118Z") Instant fechaUltimoCambioEstado,
+		@Schema(description = "Segundos transcurridos en el estado actual", example = "0") long tiempoEnEstadoSegundos,
+		@Schema(description = "Minutos enteros transcurridos en el estado actual", example = "0") long tiempoEnEstadoMinutos) {
 
-	public record SignosVitalesResponse(int frecuenciaCardiaca, int presionSistolica, int presionDiastolica, int spo2,
-			double temperatura, int dolor, int gcs) {
+	@Schema(description = "Signos vitales medidos al registrar")
+	public record SignosVitalesResponse(
+			@Schema(description = "Frecuencia cardíaca (bpm)", example = "130", minimum = "20", maximum = "250") int frecuenciaCardiaca,
+			@Schema(description = "Presión sistólica (mmHg)", example = "180", minimum = "60", maximum = "260") int presionSistolica,
+			@Schema(description = "Presión diastólica (mmHg)", example = "110", minimum = "30", maximum = "160") int presionDiastolica,
+			@Schema(description = "SpO2 (%)", example = "97", minimum = "70", maximum = "100") int spo2,
+			@Schema(description = "Temperatura (°C)", example = "36.8", minimum = "34.0", maximum = "42.0") double temperatura,
+			@Schema(description = "Dolor (0-10)", example = "8", minimum = "0", maximum = "10") int dolor,
+			@Schema(description = "Glasgow (3-15)", example = "15", minimum = "3", maximum = "15") int gcs) {
 
 		static SignosVitalesResponse desde(SignosVitales s) {
-			return new SignosVitalesResponse(s.frecuenciaCardiaca(), s.presionSistolica(), s.presionDiastolica(),
-					s.spo2(), s.temperatura(), s.dolor(), s.gcs());
+			return new SignosVitalesResponse(s.frecuenciaCardiaca(), s.presionSistolica(), s.presionDiastolica(), s.spo2(),
+					s.temperatura(), s.dolor(), s.gcs());
 		}
 
 	}

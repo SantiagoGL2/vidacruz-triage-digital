@@ -1,19 +1,32 @@
-# Perfil de pruebas. Redis/Kafka los inyectan los Testcontainers; el LLM se mockea con WireMock (base-url).
+# Perfil de pruebas. Redis y Kafka los inyectan los Testcontainers (@DynamicPropertySource).
 spring:
   data:
     redis:
       password: test-only
-  ai:
-    openai:
-      api-key: test-only-key
-    vectorstore:
-      redis:
-        initialize-schema: true
+  kafka:
+    producer:
+      properties:
+        # La DLT debe responder rapido incluso en los tests de fallo
+        max.block.ms: 3000
+        request.timeout.ms: 3000
+        delivery.timeout.ms: 5000
 assistant:
   security:
     api-key: test-api-key
-  rag:
-    ingest-on-startup: false
+  kafka:
+    # Backoff corto para que "Redis caido y vuelve" se pruebe en segundos
+    retry:
+      initial-interval: 200ms
+      multiplier: 2.0
+      max-interval: 1s
+      max-elapsed-time: 2m
+  estado-urgencias:
+    ttl-deduplicacion: PT1H
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
 management:
   otlp:
     tracing:

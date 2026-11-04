@@ -1,0 +1,19 @@
+{
+  "eventId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c44",
+  "eventType": "paciente_alta",
+  "occurredAt": "2026-11-04T15:40:00.000001Z",
+  "version": 1,
+  "correlationId": "demo-003",
+  "payload": {
+    "pacienteId": "e62f5bb0-848c-4343-9887-19cc8fcf3a0a",
+    "nivel": "CRITICO",
+    "nivelNumero": 1,
+    "estadoAnterior": "EN_CONSULTA",
+    "estadoNuevo": "ALTA",
+    "fechaRegistro": "2026-11-04T15:17:57.285937Z",
+    "slaMinutos": 5,
+    "escalado": true,
+    "fechaPrimeraConsulta": "2026-11-04T15:20:10.402118Z",
+    "fechaCambioEstado": "2026-11-04T15:40:00.000001Z"
+  }
+}

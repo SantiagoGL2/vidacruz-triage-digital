@@ -34,6 +34,12 @@ Toda la plataforma: `docker compose up --build`. Detalle de comandos y convencio
 | `GET /triage/alertas/stream` | RF-06 — alertas SSE ([ADR 0002](docs/adr/0002-alertas-de-escalamiento-sse-y-webhook.md)) |
 | `GET /triage/reportes/operacion?desde&hasta` | RF-05 — [reporte por hora](docs/reporte-operacion.md) |
 
+## API del asistente (estado de urgencias)
+
+* **Swagger UI:** <http://localhost:8082/swagger-ui.html> (contrato en `/v3/api-docs`); mismo botón **Authorize** con `ASSISTANT_API_KEY`.
+* `GET /asistente/estado-urgencias` — pacientes activos por nivel y escalados, reconstruidos desde `triaje.eventos` (RF-04 parte B, [ADR 0003](docs/adr/0003-envelope-de-eventos-duplicado-entre-servicios.md)).
+* `./gradlew bootRun` en `clinical-assistant-service` lee el `.env` de la raíz (perfil `local`).
+
 ## Documentación
 
 * [`docs/enunciado.md`](docs/enunciado.md) — requerimientos y reglas de negocio.

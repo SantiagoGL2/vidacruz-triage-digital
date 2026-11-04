@@ -1,0 +1,19 @@
+{
+  "eventId": "5b0f3c1e-8f6d-4f55-9a0e-2d2f4b5f0a11",
+  "eventType": "paciente_registrado",
+  "occurredAt": "2026-11-04T15:17:57.285937Z",
+  "version": 1,
+  "correlationId": "demo-001",
+  "payload": {
+    "pacienteId": "e62f5bb0-848c-4343-9887-19cc8fcf3a0a",
+    "nivel": "CRITICO",
+    "nivelNumero": 1,
+    "estadoAnterior": null,
+    "estadoNuevo": "REGISTRADO",
+    "fechaRegistro": "2026-11-04T15:17:57.285937Z",
+    "slaMinutos": 5,
+    "escalado": false,
+    "fechaPrimeraConsulta": null,
+    "fechaCambioEstado": "2026-11-04T15:17:57.285937Z"
+  }
+}

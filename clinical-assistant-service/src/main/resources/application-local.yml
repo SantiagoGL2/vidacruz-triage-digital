@@ -1,8 +1,20 @@
 # Ejecucion en la maquina del desarrollador (./gradlew bootRun) contra la infraestructura de docker-compose
-# (puertos publicados en localhost). Los secretos siguen viniendo del entorno / .env.
+# (puertos publicados en localhost). Los secretos (REDIS_PASSWORD, ASSISTANT_API_KEY...) se leen del .env de la raiz
+# del repo; si existe, no hace falta exportarlos. Las variables de entorno reales tienen prioridad sobre el .env.
+spring:
+  config:
+    import: optional:file:../.env[.properties]
+
 logging:
   structured:
     format:
       console: ${LOG_FORMAT:}   # texto legible en local; exporta LOG_FORMAT=logstash para JSON
   level:
     com.vidacruz: ${LOG_LEVEL_APP:DEBUG}
+
+# Swagger UI y /v3/api-docs encendidos fuera de produccion (SWAGGER_HABILITADO=false para apagarlos).
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_HABILITADO:true}
+  swagger-ui:
+    enabled: ${SWAGGER_HABILITADO:true}

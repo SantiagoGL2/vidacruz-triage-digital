@@ -47,7 +47,7 @@ com.vidacruz.<servicio>
 │   ├── context          contexto transversal (ContextoCorrelacion: clave del Reactor Context)
 │   └── exception        errores de aplicación (PacienteNoEncontradoException)
 └── infrastructure
-    ├── entrypoint.kafka   consumidor del topic (triage: alertas de escalamiento) · listener + exception
+    ├── entrypoint.kafka   consumidor del topic (triage: alertas de escalamiento; asistente: estado de urgencias) · listener + exception/dto
     ├── entrypoint.scheduler  procesos de fondo reactivos (CicloPeriodico, Flux.interval) que llaman casos de uso
     ├── entrypoint.web   (adapters de entrada)
     │   ├── controller   <X>Controller; solo conocen application.port.in, command/result y dto
@@ -88,7 +88,7 @@ Reglas (las verifica `ArquitecturaTests`; si falla una, se corrige el código, n
   - Repositorios y proyecciones **no salen de `drivenadapter.postgres`**: solo los usan los adapters (ArchUnit lo verifica). Spring Data introspecciona la primera invocación de forma perezosa (lee el `.class` del disco), así que `CalentamientoRepositorios` ejecuta cada consulta una vez al arrancar para no bloquear el event loop.
   - **`DatabaseClient` solo para SQL dinámico** (se arma en tiempo de ejecución: filtros opcionales, ORDER BY variable…), siempre con un comentario que explique por qué no cabe en un `@Query`. Hoy el único `DatabaseClient` es el del reporte RF-05, justificado por la segunda regla.
   - **Consultas muy largas** (p. ej. el reporte RF-05 con CTE/window functions) → archivo `.sql` en `src/main/resources/db/queries/` cargado por el adapter **una sola vez al arrancar** (no en cada petición) y ejecutado con `DatabaseClient` (`ReporteOperacionR2dbcAdapter`), no una cadena gigante en Java. Cada bloque (CTE) lleva un comentario breve; los parámetros son siempre con nombre.
-- El asistente aplica lo mismo; sus adapters específicos (`kafka`, `redis`, `ai`) cuelgan de `drivenadapter` y, si consume Kafka, el consumidor es un adapter de **entrada** (`infrastructure.entrypoint.messaging`).
+- El asistente aplica lo mismo; sus adapters específicos (`kafka`, `redis`, `ai`) cuelgan de `drivenadapter` y, si consume Kafka, el consumidor es un adapter de **entrada** (`infrastructure.entrypoint.kafka`).
 
 ## Decisiones de arquitectura (respetarlas)
 
@@ -96,7 +96,7 @@ Reglas (las verifica `ArquitecturaTests`; si falla una, se corrige el código, n
 - **100 % reactivo:** WebFlux + `Mono`/`Flux`, R2DBC para PostgreSQL. **Cero llamadas bloqueantes en el event loop.** Lo inevitablemente bloqueante (p. ej. cliente LLM de Spring AI, Jedis del vector store) se envuelve con `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())`. Flyway es JDBC pero solo corre al arrancar.
 - **Kafka con `spring-kafka`** (NO reactor-kafka, en mantenimiento): `KafkaTemplate` envuelto con `Mono.fromFuture`. Topic `triaje.eventos`; mensajes JSON con envelope `{eventId (UUID), eventType, occurredAt, version, payload}`. Tipos: `paciente_registrado`, `paciente_en_consulta`, `paciente_escalado`, `paciente_alta`. Clave del mensaje = id del paciente (orden por paciente).
 - **Transactional Outbox** en triage: cambio de estado + auditoría + evento en la **misma transacción R2DBC**; un publicador reactivo envía `outbox_eventos` a Kafka (`FOR UPDATE SKIP LOCKED`, seguro con varias réplicas; sin ShedLock porque no existe proveedor R2DBC y exigiría JDBC bloqueante).
-- **Consumidor idempotente** en el asistente: `eventId` deduplicado en Redis con `SETNX` + TTL.
+- **Consumidor idempotente** en el asistente: `eventId` deduplicado en Redis (`SET ... EX`) **dentro del mismo script Lua** que aplica el evento, para que sea atómico. Ver sección «Asistente: estado de urgencias».
 - **DLQ:** `triaje.eventos.DLT` con `DefaultErrorHandler` + `DeadLetterPublishingRecoverer`, backoff exponencial; excepciones no recuperables (JSON inválido, evento mal formado) directo a DLT.
 - **Resilience4j sobre el LLM** (instancia `llm`): CircuitBreaker + Retry (**solo** transitorios: timeout, 5xx, 429) + TimeLimiter + Bulkhead. Fallback = HTTP **503** con mensaje claro.
 - **Sin Saga** (se justificará en un ADR): no hay transacción distribuida; el asistente solo proyecta eventos.
@@ -184,6 +184,16 @@ Perfiles: `local` (por defecto, hosts en localhost) · `docker` (hosts = nombres
 - `GET /triage/reportes/operacion?desde&hasta` (ISO 8601 con offset, `[desde, hasta)`). Una sola consulta SQL en `db/queries/reporte-operacion.sql` (CTEs, `ROW_NUMBER`, `FILTER`, `percentile_cont`); Java solo mapea. Explicación, supuestos y EXPLAIN en `docs/reporte-operacion.md`.
 - Config: `triage.reportes.zona-horaria` (`America/Bogota`) y `triage.reportes.rango-maximo-dias` (31).
 - Tests (`ReporteOperacionTests`): dataset determinista insertado por SQL; cada test usa su propio día de 2020 porque la auditoría es append-only y no se puede limpiar.
+
+### Asistente: estado de urgencias (clinical-assistant-service)
+
+- **RF-04 parte B:** `EventosTriajeKafkaListener` (grupo `asistente-estado-urgencias`) → `AplicarEventoClinicoUseCase` → `EstadoUrgenciasPort` (Redis). `GET /asistente/estado-urgencias` lee la vista; **nunca** se llama a la API de triage (regla de ArchUnit). El envelope del evento se duplica en el asistente a propósito: ADR 0003.
+- **Dominio sin Redis:** `VistaUrgencias` es la especificación ejecutable de las reglas (registrado/consulta/escalado/alta, duplicados, desconocidos); el adapter las aplica de forma atómica con `resources/redis/aplicar-evento.lua` (un script por evento: dedupe por `eventId` + paciente + contadores + último evento). Si cambias una regla, cámbiala en **ambos** sitios: `ScriptLuaTests` compara Redis con el modelo.
+- **Listener síncrono por registro, no `Mono`:** en spring-kafka 3.3.16 un `Mono` que falla no llega al `DefaultErrorHandler` (se pierde el evento) y rompe el orden por paciente. El hilo del consumidor hace `block(timeout)` (hilo dedicado, no el event loop). **No cambiar a `Mono` sin repetir los tests de Redis caído y de DLT.**
+- **Errores:** `ErrorHandlingDeserializer` + JSON; ilegible o incompleto → `triaje.eventos.DLT` directo; Redis caído → backoff exponencial y offset sin confirmar; `eventType` desconocido → ignorado (no DLT). `auto.offset.reset=earliest`: el topic debe retener los eventos de los pacientes activos (sin `compact`).
+- **Redis:** prefijo `asistente:urgencias:` (`ASSISTANT_REDIS_PREFIX`) para no chocar con el vector store del RAG. Spring AI está excluido del autoconfigurado hasta implementar el RAG (RF-04 parte A).
+- **Local:** el perfil `local` del asistente importa el `.env` de la raíz (`spring.config.import`), así que `./gradlew bootRun` basta con `docker compose up -d postgres kafka kafka-init redis`. Swagger UI: `http://localhost:8082/swagger-ui.html`.
+- **Tests:** `AbstractIntegrationTest` (Redis `redis/redis-stack-server` + Kafka compartidos, BlockHound, Redis vaciado antes de cada test), `KafkaDePrueba` (productor, lector de DLT, lag del grupo), `EventosTriaje` (eventos con el formato de `docs/eventos.md`). Los tests de Redis caído usan `docker pause` sobre el contenedor compartido y lo reanudan en `finally`.
 
 ### Procesos de fondo y alertas (triage-service)
 

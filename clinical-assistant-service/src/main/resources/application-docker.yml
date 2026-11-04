@@ -9,3 +9,10 @@ spring:
     vectorstore:
       redis:
         uri: redis://:${REDIS_PASSWORD}@${REDIS_HOST:redis}:${REDIS_PORT:6379}
+
+# Swagger UI y /v3/api-docs encendidos fuera de produccion (SWAGGER_HABILITADO=false para apagarlos).
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_HABILITADO:true}
+  swagger-ui:
+    enabled: ${SWAGGER_HABILITADO:true}

@@ -1,0 +1,30 @@
+package com.vidacruz.assistant.infrastructure.drivenadapter.observability;
+
+import com.vidacruz.assistant.application.context.ContextoCorrelacion;
+import io.micrometer.context.ContextRegistry;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.slf4j.MDC;
+import org.springframework.beans.factory.InitializingBean;
+import org.springframework.stereotype.Component;
+
+/**
+ * Puente Reactor Context -> MDC. El correlationId vive en el Context de Reactor; con
+ * {@code spring.reactor.context-propagation=auto} Reactor lo copia al MDC alrededor de cada operador, de modo que
+ * los logs lo incluyen sin usar ThreadLocal a mano.
+ */
+@Component
+class PropagacionContextoMdc implements InitializingBean {
+
+	private static final AtomicBoolean REGISTRADO = new AtomicBoolean();
+
+	@Override
+	public void afterPropertiesSet() {
+		if (REGISTRADO.compareAndSet(false, true)) {
+			ContextRegistry.getInstance().registerThreadLocalAccessor(ContextoCorrelacion.CLAVE,
+					() -> MDC.get(ContextoCorrelacion.CLAVE),
+					valor -> MDC.put(ContextoCorrelacion.CLAVE, valor),
+					() -> MDC.remove(ContextoCorrelacion.CLAVE));
+		}
+	}
+
+}

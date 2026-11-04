@@ -93,7 +93,7 @@ Para el conteo de activos no tiene efecto (ver tabla anterior).
 
 | Consumidor | Grupo | Que hace |
 |------------|-------|----------|
-| `clinical-assistant-service` | propio | Reconstruye el estado de urgencias en Redis (dedupe por `eventId`). |
+| `clinical-assistant-service` (estado de urgencias, RF-04 B) | `asistente-estado-urgencias` | Aplica los 4 tipos a la vista de Redis (ver abajo). Mensajes ilegibles o incompletos → `triaje.eventos.DLT`; `eventType` desconocido → se ignora (no va a la DLT). |
 | `triage-service` (alertas, RF-06) | `triage-alertas` | Procesa **solo** `paciente_escalado` y alerta por SSE y webhook (ver ADR 0002). Mensajes ilegibles → `triaje.eventos.DLT` sin reintentos. |
 
 ## Garantias
@@ -104,3 +104,23 @@ Para el conteo de activos no tiene efecto (ver tabla anterior).
 - **Kafka caido:** el registro de pacientes no falla. El evento queda pendiente: cada fallo suma un intento y guarda el motivo, y se reintenta con backoff exponencial (`backoff-inicial * 2^(intentos-1)`, tope `backoff-maximo`). Al llegar a `max-intentos` deja de reintentarse y **bloquea los eventos posteriores de ese paciente** (para no desordenar); queda en `outbox_eventos` para revision manual (log `ERROR` y fuera del gauge de pendientes).
 - **Metricas:** `triage.outbox.publicados`, `triage.outbox.fallos` (contadores) y `triage.outbox.pendientes` (gauge, se actualiza cada ciclo).
 - **Orden:** garantizado por paciente (misma clave de particion), no entre pacientes.
+
+## Qué consume `clinical-assistant-service` (RF-04 parte B)
+
+El asistente reconstruye el estado de urgencias **solo** con este topic (no llama a la API de triage). Usa `eventId`,
+`eventType`, `occurredAt` y, del payload, `pacienteId` (siempre) y `nivel` + `fechaRegistro` (solo en
+`paciente_registrado`); el resto del payload se ignora. Lee el `correlationId` del header Kafka (o del envelope).
+Consulta: `GET /asistente/estado-urgencias` (ver el contrato en su OpenAPI).
+
+| `eventType` | Efecto en la vista |
+|-------------|--------------------|
+| `paciente_registrado` | el paciente entra (estado `REGISTRADO`) y suma 1 a su nivel; si ya estaba, se ignora |
+| `paciente_en_consulta` | pasa a `EN_CONSULTA`; los contadores no cambian |
+| `paciente_escalado` | marca `escalado` y suma 1 a `escalados` (una sola vez); los niveles no cambian |
+| `paciente_alta` | resta 1 al nivel que tenía en la vista y lo elimina (y baja `escalados` si estaba escalado) |
+| otro | se ignora (log + métrica), no va a la DLT |
+
+Requisitos sobre el topic: la clave debe ser el `pacienteId` (orden por paciente) y la **retención debe conservar los
+eventos de los pacientes activos** para poder reconstruir la vista desde el inicio (no usar compactación). Más en
+`docs/supuestos.md` (82–95) y el [ADR 0003](adr/0003-envelope-de-eventos-duplicado-entre-servicios.md) sobre por qué el
+envelope se duplica en cada servicio.

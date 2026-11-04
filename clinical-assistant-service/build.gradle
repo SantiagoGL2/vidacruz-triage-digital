@@ -22,6 +22,7 @@ ext {
 	set('springAiVersion', '1.1.8')
 	set('resilience4jVersion', '2.4.0')
 	set('wiremockVersion', '3.13.2')
+	set('springdocVersion', '2.8.13')
 	// Testcontainers 2.x (la gestionada por Boot 3.5 es 1.21.x, incompatible con Docker Engine reciente en Windows). Ver CLAUDE.md.
 	set('testcontainers.version', '2.0.5')
 }
@@ -37,6 +38,7 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webflux'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation "org.springdoc:springdoc-openapi-starter-webflux-ui:${springdocVersion}"   // Swagger UI + /v3/api-docs
 
 	// --- Mensajería (consumidor) y vista materializada en Redis ---
 	implementation 'org.springframework.kafka:spring-kafka'
@@ -68,12 +70,20 @@ dependencies {
 	testImplementation 'org.springframework.kafka:spring-kafka-test'
 	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
 	testImplementation 'org.testcontainers:testcontainers-kafka'
+	testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.1'
+	testImplementation 'io.projectreactor.tools:blockhound:1.0.18.RELEASE'   // detecta llamadas bloqueantes en el event loop
 	testImplementation "org.wiremock:wiremock-standalone:${wiremockVersion}"  // mock HTTP del proveedor LLM
 	testCompileOnly 'org.projectlombok:lombok'
 	testAnnotationProcessor 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+}
+
 tasks.named('test') {
 	useJUnitPlatform()
+	// BlockHound necesita redefinir clases en JDK 13+.
+	jvmArgs '-XX:+AllowRedefinitionToAddDeleteMethods'
 }

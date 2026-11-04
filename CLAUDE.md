@@ -25,9 +25,61 @@ vidacruz-triage-digital/
 
 Un solo repo git y un solo `.gitignore` en la raíz. La raíz tiene un `settings.gradle` **solo como composite build** (`includeBuild` de ambos servicios, para que IntelliJ los detecte) y un `build.gradle` mínimo con agregadores; no es multi-módulo: cada servicio tiene su propio wrapper y se construye/despliega por separado (los Dockerfiles usan la carpeta del servicio como contexto). DSL Gradle: **Groovy** (`build.gradle`) en ambos.
 
+## Estructura de paquetes (triage-service y clinical-assistant-service)
+
+Un paquete = un solo tipo de cosa. `triage-service` ya la implementa; `clinical-assistant-service` debe seguirla al crecer.
+
+```
+com.vidacruz.<servicio>
+├── domain
+│   ├── model            agregados y value objects (records, inmutables)
+│   │   └── enums        NivelTriaje, EstadoPaciente, TipoEventoClinico
+│   ├── event            eventos de dominio que viajan por los puertos (EventoTriaje)
+│   ├── exception        errores de negocio (sin Spring)
+│   ├── service          servicios de dominio (reglas): Clasificador, PoliticaSla, RegistradorPacientes
+│   └── port.out         SOLO interfaces de lo que el dominio necesita (repositorios, outbox, transacción, métricas)
+├── application
+│   ├── port.in          SOLO interfaces de casos de uso
+│   ├── usecase          implementaciones: <Nombre>UseCaseImpl (+ helpers package-private)
+│   ├── command          records de entrada a los casos de uso
+│   ├── result           records de salida de los casos de uso
+│   ├── event            fábricas que construyen eventos desde el dominio (FabricaEventos)
+│   ├── context          contexto transversal (ContextoCorrelacion: clave del Reactor Context)
+│   └── exception        errores de aplicación (PacienteNoEncontradoException)
+└── infrastructure
+    ├── entrypoint.web   (adapters de entrada)
+    │   ├── controller   <X>Controller; solo conocen application.port.in, command/result y dto
+    │   ├── dto.request  <X>Request   (records + Bean Validation de presencia/tipo)
+    │   ├── dto.response <X>Response  (records)
+    │   ├── exception    @RestControllerAdvice + fábrica de ProblemDetail
+    │   └── filter       WebFilters (CorrelationIdWebFilter)
+    ├── drivenadapter    (adapters de salida)
+    │   ├── postgres
+    │   │   ├── adapter  <X>R2dbcAdapter / <X>Adapter: implementan domain.port.out (package-private)
+    │   │   ├── entity   <X>Entity: @Table de Spring Data R2DBC (NUNCA JPA)
+    │   │   └── mapper   <X>Mapper: dominio <-> entity, explícito, uno por entidad
+    │   ├── kafka        (asistente y publicador del outbox) adapters de mensajería
+    │   ├── redis        (asistente) vector store y estado en tiempo real
+    │   ├── ai           (asistente) cliente LLM + Resilience4j
+    │   └── observability  métricas Micrometer y propagación Reactor -> MDC
+    └── config           @Configuration, @ConfigurationProperties y calentamientos de arranque
+        └── security     SecurityConfig, autenticación por API key, propiedades de seguridad
+```
+
+Reglas (las verifica `ArquitecturaTests`; si falla una, se corrige el código, no la regla):
+
+- `domain` no depende de `application` ni `infrastructure`, ni de Spring, R2DBC, Kafka, Jackson, Lombok o Micrometer. **Reactor solo en `domain.port.out`** (los puertos devuelven `Mono`); el resto del dominio es Java puro.
+- Los puertos de salida viven en `domain.port.out` (el dominio define lo que necesita) y se implementan en `infrastructure.drivenadapter`. Los de entrada viven en `application.port.in` y los implementa `application.usecase`. Ambos paquetes contienen **solo interfaces**.
+- `application` no depende de `infrastructure` ni de Spring/R2DBC/Jackson/Kafka: los casos de uso son clases planas, cableadas en `infrastructure.config.ApplicationConfig`. La transacción se abstrae con `TransaccionPort`.
+- Los controllers solo usan puertos de entrada: nada de adapters, entities ni puertos de salida. `entrypoint` y `drivenadapter` no se conocen entre sí.
+- `@Table` solo en `infrastructure.drivenadapter.postgres.entity`, y las entities no salen de `drivenadapter.postgres`.
+- Nombres: `*UseCaseImpl`, `*Controller`, `*Request`, `*Response`, `*Entity`, `*Mapper`, `*Adapter`. Los records que viajan por un caso de uso van en `command`/`result`; si son conceptos de negocio, en `domain.model`.
+- Persistencia: `R2dbcEntityTemplate` para lo estándar (insert explícito porque el id lo asigna la aplicación, select por id, update con `@Version`) y `DatabaseClient` solo para SQL especial (UPDATE condicional del escalamiento, `FOR UPDATE SKIP LOCKED`, reportes).
+- El asistente aplica lo mismo; sus adapters específicos (`kafka`, `redis`, `ai`) cuelgan de `drivenadapter` y, si consume Kafka, el consumidor es un adapter de **entrada** (`infrastructure.entrypoint.messaging`).
+
 ## Decisiones de arquitectura (respetarlas)
 
-- **Hexagonal por servicio:** `domain/` (Java puro, sin Spring) · `application/` (casos de uso + puertos `port/in`, `port/out`) · `infrastructure/` (adapters: `web`, `persistence`, `messaging`, `ai`, `scheduler`, `config`). Dependencias solo hacia adentro: infrastructure → application → domain.
+- **Hexagonal por servicio**, con la estructura de la sección «Estructura de paquetes». Dependencias solo hacia adentro: infrastructure → application → domain. Se hace cumplir con ArchUnit (`ArquitecturaTests`), no con módulos Gradle (ver `docs/adr/0001-estructura-por-paquetes-con-archunit.md`).
 - **100 % reactivo:** WebFlux + `Mono`/`Flux`, R2DBC para PostgreSQL. **Cero llamadas bloqueantes en el event loop.** Lo inevitablemente bloqueante (p. ej. cliente LLM de Spring AI, Jedis del vector store) se envuelve con `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())`. Flyway es JDBC pero solo corre al arrancar.
 - **Kafka con `spring-kafka`** (NO reactor-kafka, en mantenimiento): `KafkaTemplate` envuelto con `Mono.fromFuture`. Topic `triaje.eventos`; mensajes JSON con envelope `{eventId (UUID), eventType, occurredAt, version, payload}`. Tipos: `paciente_registrado`, `paciente_en_consulta`, `paciente_escalado`, `paciente_alta`. Clave del mensaje = id del paciente (orden por paciente).
 - **Transactional Outbox** en triage: cambio de estado + auditoría + evento en la **misma transacción R2DBC**; un publicador reactivo envía `outbox_eventos` a Kafka (`FOR UPDATE SKIP LOCKED`, seguro con varias réplicas; sin ShedLock porque no existe proveedor R2DBC y exigiría JDBC bloqueante).
@@ -43,7 +95,7 @@ Un solo repo git y un solo `.gitignore` en la raíz. La raíz tiene un `settings
 
 ## Convenciones de código
 
-- Paquetes base: `com.vidacruz.triage` y `com.vidacruz.assistant`; subpaquetes `domain|application|infrastructure` como arriba. Cada paquete tiene `package-info.java`.
+- Paquetes base: `com.vidacruz.triage` y `com.vidacruz.assistant`, con la misma estructura (sección «Estructura de paquetes»). `package-info.java` solo donde documente algo útil (reglas de la capa, por qué un paquete es especial); no se crean vacíos.
 - **Español para el dominio clínico**, tal como en el enunciado: `Paciente`, `NivelTriaje`, `EstadoPaciente`, `SignosVitales`, `fechaRegistro`, `slaMinutos`, `quejaPrincipal`; endpoints y JSON en español (`/triage/pacientes`, `estado`, `escalado`); tablas/columnas SQL en español `snake_case`. **Inglés para lo técnico**: `Controller`, `Repository`, `UseCase`, `Adapter`, `Properties`, `OutboxPublisher`, `SecurityConfig`.
 - Eventos Kafka: `eventType` en minúsculas con guion bajo (`paciente_escalado`).
 - Lombok solo para boilerplate (getters, builders, logs); el dominio prefiere `record`s e inmutabilidad.
@@ -102,3 +154,4 @@ Perfiles: `local` (por defecto, hosts en localhost) · `docker` (hosts = nombres
 - Artefactos 2.x con prefijo: `testcontainers-junit-jupiter`, `testcontainers-postgresql`, `testcontainers-r2dbc`, `testcontainers-kafka`. Clases movidas: `org.testcontainers.postgresql.PostgreSQLContainer` (ya no genérico); `KafkaContainer` en `org.testcontainers.kafka`.
 - **No usar `@ServiceConnection`** ni `spring-boot-testcontainers`: Boot 3.5 solo reconoce los contenedores 1.x. Las propiedades se inyectan con `@DynamicPropertySource`.
 - Los tests de integración extienden `AbstractIntegrationTest` y obtienen Postgres/Kafka de `Contenedores` (singletons por JVM, no un contenedor por clase).
+- Los tests de integracion web (`PacienteApiTests`, `AtomicidadTransaccionalTests`) corren con **BlockHound** activo (`BlockHoundSupport`; la JVM de test lleva `-XX:+AllowRedefinitionToAddDeleteMethods`). Si BlockHound falla un test, hay una llamada bloqueante real en el event loop: arreglala o envuelvela en `boundedElastic`; solo se permiten excepciones de libreria en `BlockHoundSupport`.

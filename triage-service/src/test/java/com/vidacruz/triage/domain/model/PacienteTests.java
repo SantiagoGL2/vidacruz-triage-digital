@@ -6,6 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.vidacruz.triage.domain.Signos;
 import com.vidacruz.triage.domain.exception.DatoClinicoInvalidoException;
 import com.vidacruz.triage.domain.exception.TransicionInvalidaException;
+import com.vidacruz.triage.domain.model.enums.EstadoPaciente;
+import com.vidacruz.triage.domain.model.enums.NivelTriaje;
+import com.vidacruz.triage.domain.model.enums.TipoEventoClinico;
 import com.vidacruz.triage.domain.service.ClasificadorTriaje;
 import com.vidacruz.triage.domain.service.PoliticaSlaEstandar;
 import com.vidacruz.triage.domain.service.RegistradorPacientes;
@@ -26,7 +29,7 @@ class PacienteTests {
 
 	/** Paciente NO_URGENTE (signos normales, queja no administrativa): SLA 60 min. */
 	private Paciente nuevo() {
-		return registrador.registrar(UUID.randomUUID(), "Ana Perez", 35, Signos.normales().build(), "Herida por cortar", T0)
+		return registrador.registrar(UUID.randomUUID(), Signos.normales().datos("Ana Perez", 35, "Herida por cortar"), T0)
 				.paciente();
 	}
 
@@ -43,8 +46,8 @@ class PacienteTests {
 
 	@Test
 	void registroClasificaAsignaSlaYAudita() {
-		CambioClinico cambio = registrador.registrar(UUID.randomUUID(), "  Ana Perez ", 35,
-				Signos.normales().fc(130).build(), " Dolor torácico ", T0);
+		CambioClinico cambio = registrador.registrar(UUID.randomUUID(),
+				Signos.normales().fc(130).datos("  Ana Perez ", 35, " Dolor torácico "), T0);
 
 		Paciente p = cambio.paciente();
 		assertThat(p.nivel()).isEqualTo(NivelTriaje.CRITICO);
@@ -67,13 +70,13 @@ class PacienteTests {
 				NivelTriaje.URGENTE_2, 3, NivelTriaje.NO_URGENTE, 4, NivelTriaje.NO_URGENTE_2, 5));
 		var reg = new RegistradorPacientes(new ClasificadorTriaje(), politica);
 
-		assertThat(reg.registrar(UUID.randomUUID(), "Ana Perez", 35, Signos.normales().build(), "Herida", T0)
+		assertThat(reg.registrar(UUID.randomUUID(), Signos.normales().datos("Ana Perez", 35, "Herida"), T0)
 				.paciente().slaMinutos()).isEqualTo(4);
 	}
 
 	@Test
 	void registroConDatosPersonalesInvalidosFalla() {
-		assertThatThrownBy(() -> registrador.registrar(UUID.randomUUID(), "A", 500, Signos.normales().build(), "", T0))
+		assertThatThrownBy(() -> registrador.registrar(UUID.randomUUID(), Signos.normales().datos("A", 500, ""), T0))
 				.isInstanceOf(DatoClinicoInvalidoException.class)
 				.satisfies(e -> assertThat(((DatoClinicoInvalidoException) e).errores()).hasSize(3));
 	}

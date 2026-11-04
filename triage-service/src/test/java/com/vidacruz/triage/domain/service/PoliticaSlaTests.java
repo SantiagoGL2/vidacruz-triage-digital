@@ -3,7 +3,7 @@ package com.vidacruz.triage.domain.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.vidacruz.triage.domain.model.NivelTriaje;
+import com.vidacruz.triage.domain.model.enums.NivelTriaje;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;

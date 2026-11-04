@@ -1,7 +1,7 @@
 package com.vidacruz.triage.domain.service;
 
-import com.vidacruz.triage.domain.model.NivelTriaje;
 import com.vidacruz.triage.domain.model.SignosVitales;
+import com.vidacruz.triage.domain.model.enums.NivelTriaje;
 import java.util.List;
 import java.util.function.Predicate;
 

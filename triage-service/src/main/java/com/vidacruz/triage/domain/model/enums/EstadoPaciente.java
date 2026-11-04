@@ -1,4 +1,4 @@
-package com.vidacruz.triage.domain.model;
+package com.vidacruz.triage.domain.model.enums;
 
 import java.util.EnumSet;
 import java.util.Set;

@@ -1,4 +1,4 @@
-package com.vidacruz.triage.domain.model;
+package com.vidacruz.triage.domain.model.enums;
 
 /** Nivel de triaje (RN-01). El numero menor es mayor gravedad. */
 public enum NivelTriaje {

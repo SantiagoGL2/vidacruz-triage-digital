@@ -5,6 +5,14 @@ spring:
     name: triage-service
   profiles:
     default: local
+  reactor:
+    # Copia el Context de Reactor (correlationId) al MDC en cada operador: logs con correlationId sin ThreadLocal manual.
+    context-propagation: auto
+  jackson:
+    deserialization:
+      accept-float-as-int: false      # 72.5 en un campo entero es un 400, no se trunca a 72
+    mapper:
+      allow-coercion-of-scalars: false  # "72" (string) en un campo numerico es un 400
   autoconfigure:
     exclude:
       # No se genera usuario/clave en memoria: la autenticacion es por API key (X-API-Key).
@@ -91,6 +99,15 @@ triage:
       URGENTE_2: ${TRIAGE_SLA_URGENTE_2:30}
       NO_URGENTE: ${TRIAGE_SLA_NO_URGENTE:60}
       NO_URGENTE_2: ${TRIAGE_SLA_NO_URGENTE_2:120}
+  # RN-01: quejas administrativas (nivel 5). Lista del enunciado; la queja es administrativa si CONTIENE alguna
+  # frase (sin tildes ni mayusculas). Para cambiarla hay que redefinir la lista completa.
+  clasificacion:
+    quejas-administrativas:
+      - documentos
+      - recolección de resultados
+      - renovación de recetario
+      - vacunación
+      - seguimiento
   # RF-03: scheduler de escalamiento
   escalamiento:
     habilitado: ${TRIAGE_ESCALAMIENTO_HABILITADO:true}

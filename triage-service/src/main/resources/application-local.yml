@@ -1,6 +1,8 @@
 # Ejecucion en la maquina del desarrollador (./gradlew bootRun) contra la infraestructura de docker-compose
 # (puertos publicados en localhost). Los secretos siguen viniendo del entorno / .env.
 logging:
+  pattern:
+    level: "%5p [%X{correlationId:-}]"
   structured:
     format:
       console: ${LOG_FORMAT:}   # texto legible en local; exporta LOG_FORMAT=logstash para JSON

@@ -1,5 +1,6 @@
 package com.vidacruz.triage.domain;
 
+import com.vidacruz.triage.domain.model.DatosRegistro;
 import com.vidacruz.triage.domain.model.SignosVitales;
 
 /** Builder de test: signos vitales NORMALES (nivel 4) que cada test modifica solo en lo que le interesa. */
@@ -57,6 +58,11 @@ public final class Signos {
 
 	public SignosVitales build() {
 		return new SignosVitales(fc, sistolica, diastolica, spo2, temperatura, dolor, gcs);
+	}
+
+	/** Datos crudos de registro con estos signos (sin validar: lo hace RegistradorPacientes). */
+	public DatosRegistro datos(String nombre, int edad, String queja) {
+		return new DatosRegistro(nombre, edad, fc, sistolica, diastolica, spo2, temperatura, dolor, gcs, queja);
 	}
 
 }

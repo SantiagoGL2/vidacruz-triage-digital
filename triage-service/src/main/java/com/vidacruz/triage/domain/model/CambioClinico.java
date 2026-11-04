@@ -1,5 +1,7 @@
 package com.vidacruz.triage.domain.model;
 
+import com.vidacruz.triage.domain.model.enums.EstadoPaciente;
+import com.vidacruz.triage.domain.model.enums.TipoEventoClinico;
 import java.time.Instant;
 import java.util.Objects;
 

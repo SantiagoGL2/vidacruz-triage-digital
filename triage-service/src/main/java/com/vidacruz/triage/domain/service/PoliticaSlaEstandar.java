@@ -1,6 +1,6 @@
 package com.vidacruz.triage.domain.service;
 
-import com.vidacruz.triage.domain.model.NivelTriaje;
+import com.vidacruz.triage.domain.model.enums.NivelTriaje;
 import java.util.EnumMap;
 import java.util.Map;
 

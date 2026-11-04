@@ -1,6 +1,6 @@
 package com.vidacruz.triage.domain.exception;
 
-import com.vidacruz.triage.domain.model.EstadoPaciente;
+import com.vidacruz.triage.domain.model.enums.EstadoPaciente;
 
 /** Transicion de estado no permitida (RF-02). La capa web la traducira a 409. */
 public class TransicionInvalidaException extends RuntimeException {

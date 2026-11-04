@@ -1,4 +1,4 @@
-package com.vidacruz.triage.domain.model;
+package com.vidacruz.triage.domain.model.enums;
 
 /** Tipo de evento para auditoria (RN-04) y para el evento Kafka correspondiente. */
 public enum TipoEventoClinico {

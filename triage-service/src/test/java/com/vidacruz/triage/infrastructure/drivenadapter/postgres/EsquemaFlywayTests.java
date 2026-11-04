@@ -1,8 +1,9 @@
-package com.vidacruz.triage.infrastructure.persistence;
+package com.vidacruz.triage.infrastructure.drivenadapter.postgres;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.vidacruz.triage.support.Contenedores;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -11,7 +12,6 @@ import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import com.vidacruz.triage.support.Contenedores;
 
 /** Valida V1: la migracion aplica y las garantias de integridad (CHECKs, auditoria inmutable, escalamiento unico). */
 class EsquemaFlywayTests {

@@ -1,6 +1,6 @@
 package com.vidacruz.triage.domain.service;
 
-import com.vidacruz.triage.domain.model.NivelTriaje;
+import com.vidacruz.triage.domain.model.enums.NivelTriaje;
 import java.util.List;
 
 /** Resultado de clasificar: el nivel y los motivos (condiciones cumplidas) para auditoria y logs. */

@@ -30,7 +30,7 @@ dependencies {
 
 	// --- Persistencia reactiva (R2DBC) ---
 	implementation 'org.springframework.boot:spring-boot-starter-data-r2dbc'
-	runtimeOnly 'org.postgresql:r2dbc-postgresql'
+	implementation 'org.postgresql:r2dbc-postgresql'   // compile: Json (codec JSONB) del outbox
 
 	// --- Migraciones: Flyway es JDBC (bloqueante), solo corre al arrancar, antes de aceptar tráfico ---
 	implementation 'org.flywaydb:flyway-core'
@@ -61,6 +61,7 @@ dependencies {
 	testImplementation 'org.testcontainers:testcontainers-r2dbc'
 	testImplementation 'org.testcontainers:testcontainers-kafka'
 	testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.1'
+	testImplementation 'io.projectreactor.tools:blockhound:1.0.18.RELEASE'   // detecta llamadas bloqueantes en el event loop
 	testCompileOnly 'org.projectlombok:lombok'
 	testAnnotationProcessor 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -72,4 +73,6 @@ tasks.withType(JavaCompile).configureEach {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// BlockHound necesita redefinir clases en JDK 13+.
+	jvmArgs '-XX:+AllowRedefinitionToAddDeleteMethods'
 }

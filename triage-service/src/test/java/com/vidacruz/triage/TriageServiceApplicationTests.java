@@ -1,9 +1,9 @@
 package com.vidacruz.triage;
 
+import com.vidacruz.triage.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.reactive.server.WebTestClient;
-import com.vidacruz.triage.support.AbstractIntegrationTest;
 
 /** Humo: el contexto arranca (Flyway + R2DBC + Kafka), las probes son publicas y el resto exige autenticacion. */
 class TriageServiceApplicationTests extends AbstractIntegrationTest {

@@ -1,0 +1,87 @@
+# CLAUDE.md — VidaCruz Triage Digital
+
+Guía para trabajar en este monorepo. **Ante cualquier duda de negocio, consulta `docs/enunciado.md`** (reglas RN-01..RN-05, RF-01..RF-06, validaciones, pacientes E1-E6, corpus PROTO-001..003). Las decisiones de arquitectura viven en `docs/adr/`.
+
+## Problema
+
+VidaCruz opera 12 salas de urgencias con triaje manual: clasificación inconsistente, sin trazabilidad y sin protocolos a mano. Se construyen dos microservicios reactivos:
+
+1. **triage-service** — registra pacientes con signos vitales, los clasifica por reglas objetivas (RN-01), vigila el SLA por nivel (RN-02), escala automáticamente (RF-03, idempotente RN-03), audita todo (RN-04), reporta operación con SQL avanzado (RF-05) y publica eventos a Kafka.
+2. **clinical-assistant-service** — responde preguntas sobre protocolos clínicos con RAG (sin alucinar, con cita obligatoria: RN-05) y mantiene en Redis, a partir de los eventos Kafka, el estado de urgencias en tiempo real.
+
+El triage **nunca** depende de la disponibilidad del asistente.
+
+## Estructura
+
+```
+vidacruz-triage-digital/
+├── docs/                      enunciado.pdf, enunciado.md, adr/, diagramas/
+├── k8s/                       manifests (Azure: AKS / Container Apps)
+├── triage-service/            Gradle independiente · com.vidacruz.triage
+├── clinical-assistant-service/ Gradle independiente · com.vidacruz.assistant
+├── docker-compose.yml         toda la plataforma con un comando
+└── .env.example               variables (copiar a .env, que está en .gitignore)
+```
+
+Un solo repo git y un solo `.gitignore` en la raíz. **No hay `settings.gradle` en la raíz**: cada servicio tiene su propio wrapper y se construye/despliega por separado. DSL Gradle: **Groovy** (`build.gradle`) en ambos.
+
+## Decisiones de arquitectura (respetarlas)
+
+- **Hexagonal por servicio:** `domain/` (Java puro, sin Spring) · `application/` (casos de uso + puertos `port/in`, `port/out`) · `infrastructure/` (adapters: `web`, `persistence`, `messaging`, `ai`, `scheduler`, `config`). Dependencias solo hacia adentro: infrastructure → application → domain.
+- **100 % reactivo:** WebFlux + `Mono`/`Flux`, R2DBC para PostgreSQL. **Cero llamadas bloqueantes en el event loop.** Lo inevitablemente bloqueante (p. ej. cliente LLM de Spring AI, Jedis del vector store) se envuelve con `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())`. Flyway es JDBC pero solo corre al arrancar.
+- **Kafka con `spring-kafka`** (NO reactor-kafka, en mantenimiento): `KafkaTemplate` envuelto con `Mono.fromFuture`. Topic `triaje.eventos`; mensajes JSON con envelope `{eventId (UUID), eventType, occurredAt, version, payload}`. Tipos: `paciente_registrado`, `paciente_en_consulta`, `paciente_escalado`, `paciente_alta`. Clave del mensaje = id del paciente (orden por paciente).
+- **Transactional Outbox** en triage: cambio de estado + auditoría + evento en la **misma transacción R2DBC**; un publicador reactivo envía `outbox_eventos` a Kafka (`FOR UPDATE SKIP LOCKED`, seguro con varias réplicas; sin ShedLock porque no existe proveedor R2DBC y exigiría JDBC bloqueante).
+- **Consumidor idempotente** en el asistente: `eventId` deduplicado en Redis con `SETNX` + TTL.
+- **DLQ:** `triaje.eventos.DLT` con `DefaultErrorHandler` + `DeadLetterPublishingRecoverer`, backoff exponencial; excepciones no recuperables (JSON inválido, evento mal formado) directo a DLT.
+- **Resilience4j sobre el LLM** (instancia `llm`): CircuitBreaker + Retry (**solo** transitorios: timeout, 5xx, 429) + TimeLimiter + Bulkhead. Fallback = HTTP **503** con mensaje claro.
+- **Sin Saga** (se justificará en un ADR): no hay transacción distribuida; el asistente solo proyecta eventos.
+- **Escalamiento idempotente** con `UPDATE` condicional atómico (`WHERE escalado = false AND estado = 'REGISTRADO'`); la fila afectada decide si se audita y se emite evento. Red de seguridad en BD: índice único parcial en auditoría.
+- **Redis Stack:** vector store (Spring AI) + vista materializada de estado-urgencias.
+- **Seguridad:** API key por header `X-API-Key` con `WebFilter` de Spring Security, valores por variables de entorno. **Ninguna credencial hardcodeada**. Solo `/actuator/health/**` es público.
+- **Observabilidad:** Actuator (liveness/readiness), Micrometer + Prometheus, logs JSON estructurados (nativo de Boot: `logging.structured.format.console=logstash`) con `correlationId`/`traceId`, OpenTelemetry (OTLP, desactivado por defecto). Propagación de contexto Reactor → MDC con `context-propagation`.
+- **Stack:** Java 21 (toolchain), Spring Boot **3.5.x**, Spring AI **1.1.x** (la 2.x exige Boot 4), Resilience4j 2.4 (`resilience4j-spring-boot3` + `resilience4j-reactor`), Flyway, Testcontainers 1.21.x.
+
+## Convenciones de código
+
+- Paquetes base: `com.vidacruz.triage` y `com.vidacruz.assistant`; subpaquetes `domain|application|infrastructure` como arriba. Cada paquete tiene `package-info.java`.
+- **Español para el dominio clínico**, tal como en el enunciado: `Paciente`, `NivelTriaje`, `EstadoPaciente`, `SignosVitales`, `fechaRegistro`, `slaMinutos`, `quejaPrincipal`; endpoints y JSON en español (`/triage/pacientes`, `estado`, `escalado`); tablas/columnas SQL en español `snake_case`. **Inglés para lo técnico**: `Controller`, `Repository`, `UseCase`, `Adapter`, `Properties`, `OutboxPublisher`, `SecurityConfig`.
+- Eventos Kafka: `eventType` en minúsculas con guion bajo (`paciente_escalado`).
+- Lombok solo para boilerplate (getters, builders, logs); el dominio prefiere `record`s e inmutabilidad.
+- Constructor injection; sin `@Autowired` en campos. Propiedades tipadas con `@ConfigurationProperties`; nada de `@Value` disperso.
+- Errores: excepciones de dominio → `@RestControllerAdvice` global con cuerpo estable (400 validación con campo inválido, 404, 409 transición inválida, 503 modo degradado).
+- Tiempos con `Instant`/`TIMESTAMPTZ` (UTC) y reloj inyectable (`Clock`) para testear.
+
+## Reglas de trabajo
+
+1. **No bloquear el event loop.** Nada de `.block()`, `Thread.sleep`, JDBC ni clientes síncronos fuera de `boundedElastic`. Usa BlockHound en tests si hace falta.
+2. **Tests obligatorios por funcionalidad** (unitarios + integración; Testcontainers para PostgreSQL/Kafka/Redis; WireMock para el LLM). Mínimo del enunciado: clasificación E1-E6, transiciones válidas/inválidas, idempotencia del escalamiento, citas del RAG y caso «sin coincidencia, sin alucinación».
+3. **Commits pequeños con Conventional Commits** (`feat(triage): ...`, `fix(assistant): ...`, `chore:`, `docs:`, `test:`, `build:`, `ci:`). Un cambio lógico por commit, con su test.
+4. Consulta `docs/enunciado.md` ante cualquier duda de negocio; si hay ambigüedad, documenta el supuesto (ADR o README).
+5. Secretos solo por entorno; `.env` jamás se versiona (usa `.env.example`).
+6. Migraciones Flyway inmutables una vez aplicadas: los cambios van en un `V{n}__...sql` nuevo.
+7. La auditoría es append-only: sin endpoints de borrado/edición y con trigger en BD.
+
+## Comandos
+
+Ejecutar dentro de cada servicio (`cd triage-service` / `cd clinical-assistant-service`); en Windows usar `gradlew.bat` o Git Bash.
+
+```bash
+./gradlew build -x test          # compilar + empaquetar sin tests
+./gradlew test                   # tests (Testcontainers requiere Docker en marcha)
+./gradlew build                  # compilar + tests
+./gradlew bootRun                # levantar con perfil "local" (necesita la infra del compose y variables del .env)
+./gradlew bootJar -x test        # jar ejecutable (build/libs/)
+```
+
+Toda la plataforma (desde la raíz):
+
+```bash
+cp .env.example .env             # primera vez; editar secretos
+docker compose up --build        # postgres, kafka (KRaft) + topics, redis-stack y ambos servicios
+docker compose up -d postgres kafka kafka-init redis   # solo infraestructura, para bootRun en el host
+docker compose down -v           # apagar y borrar volúmenes
+```
+
+Puertos del host: triage `8081`, asistente `8082`, PostgreSQL `5432`, Kafka (listener externo) `29092`, Redis `6379`, RedisInsight `8001`. Salud: `GET /actuator/health/readiness`.
+
+Perfiles: `local` (por defecto, hosts en localhost) · `docker` (hosts = nombres de servicio) · `test` (Testcontainers). Variables clave: ver `.env.example` (SLA por nivel `TRIAGE_SLA_*`, intervalo del scheduler `TRIAGE_ESCALAMIENTO_INTERVALO`, `LLM_*`, API keys).

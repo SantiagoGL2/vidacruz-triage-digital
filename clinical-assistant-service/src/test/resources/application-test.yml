@@ -1,0 +1,25 @@
+# Perfil de pruebas. Redis/Kafka los inyectan los Testcontainers; el LLM se mockea con WireMock (base-url).
+spring:
+  data:
+    redis:
+      password: test-only
+  ai:
+    openai:
+      api-key: test-only-key
+    vectorstore:
+      redis:
+        initialize-schema: true
+assistant:
+  security:
+    api-key: test-api-key
+  rag:
+    ingest-on-startup: false
+management:
+  otlp:
+    tracing:
+      export:
+        enabled: false
+logging:
+  structured:
+    format:
+      console:

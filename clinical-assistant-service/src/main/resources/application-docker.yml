@@ -1,0 +1,11 @@
+# Contenedores dentro de la red de docker-compose: los hosts son los nombres de servicio.
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+  ai:
+    vectorstore:
+      redis:
+        uri: redis://:${REDIS_PASSWORD}@${REDIS_HOST:redis}:${REDIS_PORT:6379}

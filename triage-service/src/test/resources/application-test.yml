@@ -1,0 +1,23 @@
+# Perfil de pruebas. Las URLs de DB/Kafka las inyectan los Testcontainers (@DynamicPropertySource).
+spring:
+  r2dbc:
+    password: test-only
+  flyway:
+    password: test-only
+triage:
+  security:
+    api-key: test-api-key
+  escalamiento:
+    habilitado: false     # los tests disparan el escalamiento explicitamente
+    intervalo: PT1S
+  outbox:
+    habilitado: false
+management:
+  otlp:
+    tracing:
+      export:
+        enabled: false
+logging:
+  structured:
+    format:
+      console:

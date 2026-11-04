@@ -1,0 +1,78 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.5.16'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.vidacruz'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+ext {
+	// Spring AI 1.1.x es la línea construida sobre Spring Boot 3.5 (la 2.x requiere Boot 4).
+	set('springAiVersion', '1.1.8')
+	set('resilience4jVersion', '2.4.0')
+	set('wiremockVersion', '3.13.2')
+}
+
+dependencyManagement {
+	imports {
+		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+	}
+}
+
+dependencies {
+	// --- Web reactivo + seguridad + validación ---
+	implementation 'org.springframework.boot:spring-boot-starter-webflux'
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+	// --- Mensajería (consumidor) y vista materializada en Redis ---
+	implementation 'org.springframework.kafka:spring-kafka'
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
+
+	// --- IA: Spring AI (modelo de chat + embeddings OpenAI-compatible) + vector store en Redis Stack ---
+	implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+	implementation 'org.springframework.ai:spring-ai-starter-vector-store-redis'
+
+	// --- Resiliencia sobre el LLM: CircuitBreaker + Retry + TimeLimiter + Bulkhead (soporte Reactor) ---
+	implementation "io.github.resilience4j:resilience4j-spring-boot3:${resilience4jVersion}"
+	implementation "io.github.resilience4j:resilience4j-reactor:${resilience4jVersion}"
+	implementation 'org.springframework.boot:spring-boot-starter-aop'
+
+	// --- Observabilidad: Actuator + Micrometer/Prometheus + trazas OTel + propagación de contexto Reactor ---
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'io.micrometer:micrometer-tracing-bridge-otel'
+	implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
+	implementation 'io.micrometer:context-propagation'
+	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+
+	// --- Tests ---
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'io.projectreactor:reactor-test'
+	testImplementation 'org.springframework.security:spring-security-test'
+	testImplementation 'org.springframework.kafka:spring-kafka-test'
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:kafka'
+	testImplementation "org.wiremock:wiremock-standalone:${wiremockVersion}"  // mock HTTP del proveedor LLM
+	testCompileOnly 'org.projectlombok:lombok'
+	testAnnotationProcessor 'org.projectlombok:lombok'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}

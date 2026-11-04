@@ -1,0 +1,158 @@
+# Configuracion base de clinical-assistant-service. Todo parametrizable por variables de entorno.
+# Los secretos (REDIS_PASSWORD, ASSISTANT_API_KEY, LLM_API_KEY) NO tienen valor por defecto: vienen del entorno (.env).
+spring:
+  application:
+    name: clinical-assistant-service
+  profiles:
+    default: local
+  autoconfigure:
+    exclude:
+      # La autenticacion es por API key (X-API-Key); no se genera usuario/clave en memoria.
+      - org.springframework.boot.autoconfigure.security.reactive.ReactiveUserDetailsServiceAutoConfiguration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    consumer:
+      group-id: ${ASSISTANT_KAFKA_GROUP_ID:clinical-assistant}
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: record
+      concurrency: ${ASSISTANT_KAFKA_CONCURRENCY:1}
+    producer:   # solo para publicar a la DLT
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+  ai:
+    # Proveedor OpenAI-compatible (OpenAI, Azure OpenAI via gateway, Groq, vLLM, Ollama...). Cambia LLM_BASE_URL.
+    openai:
+      api-key: ${LLM_API_KEY}
+      base-url: ${LLM_BASE_URL:https://api.openai.com}
+      chat:
+        options:
+          model: ${LLM_CHAT_MODEL:gpt-4o-mini}
+          temperature: 0.0          # respuestas deterministas: anti-alucinacion (RN-05)
+      embedding:
+        options:
+          model: ${LLM_EMBEDDING_MODEL:text-embedding-3-small}
+    vectorstore:
+      redis:
+        # Requiere Redis Stack (modulo RediSearch). La URI incluye la clave: formato redis://:password@host:port
+        uri: redis://:${REDIS_PASSWORD}@${REDIS_HOST:localhost}:${REDIS_PORT:6379}
+        index-name: ${ASSISTANT_VECTOR_INDEX:protocolos-idx}
+        prefix: ${ASSISTANT_VECTOR_PREFIX:protocolo:}
+        initialize-schema: ${ASSISTANT_VECTOR_INIT_SCHEMA:true}
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,circuitbreakers
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,redis
+      show-details: when-authorized
+  health:
+    circuitbreakers:
+      enabled: true
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  otlp:
+    tracing:
+      export:
+        enabled: ${OTEL_EXPORT_ENABLED:false}
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  structured:
+    format:
+      # JSON estructurado nativo de Boot (incluye MDC: correlationId, traceId, spanId). Vacio = texto plano.
+      console: ${LOG_FORMAT:logstash}
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.vidacruz: ${LOG_LEVEL_APP:INFO}
+
+# ---------------------------------------------------------------------------
+# Resilience4j sobre el proveedor LLM (instancia "llm"):
+# CircuitBreaker + Retry (solo transitorios: timeout, 5xx, 429 -> se fija por clase en codigo) + TimeLimiter + Bulkhead.
+# Fallback: HTTP 503 con mensaje claro (modo degradado).
+# ---------------------------------------------------------------------------
+resilience4j:
+  circuitbreaker:
+    instances:
+      llm:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: ${LLM_CB_WINDOW:20}
+        minimum-number-of-calls: ${LLM_CB_MIN_CALLS:10}
+        failure-rate-threshold: ${LLM_CB_FAILURE_RATE:50}
+        slow-call-duration-threshold: ${LLM_CB_SLOW_CALL:8s}
+        slow-call-rate-threshold: 80
+        wait-duration-in-open-state: ${LLM_CB_OPEN_WAIT:30s}
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+        register-health-indicator: true
+  retry:
+    instances:
+      llm:
+        max-attempts: ${LLM_RETRY_MAX_ATTEMPTS:3}
+        wait-duration: ${LLM_RETRY_WAIT:500ms}
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+  timelimiter:
+    instances:
+      llm:
+        timeout-duration: ${LLM_TIMEOUT:15s}
+        cancel-running-future: true
+  bulkhead:
+    instances:
+      llm:
+        max-concurrent-calls: ${LLM_BULKHEAD_MAX_CALLS:10}
+        max-wait-duration: 0
+
+# ---------------------------------------------------------------------------
+# Propiedades de negocio / operacion del asistente
+# ---------------------------------------------------------------------------
+assistant:
+  security:
+    api-key-header: X-API-Key
+    api-key: ${ASSISTANT_API_KEY}
+  kafka:
+    topic: ${TRIAGE_KAFKA_TOPIC:triaje.eventos}
+    dlt-topic: ${TRIAGE_KAFKA_DLT_TOPIC:triaje.eventos.DLT}
+    retry:
+      initial-interval: ${ASSISTANT_RETRY_INITIAL:1s}
+      multiplier: 2.0
+      max-interval: ${ASSISTANT_RETRY_MAX_INTERVAL:30s}
+      max-elapsed-time: ${ASSISTANT_RETRY_MAX_ELAPSED:2m}
+  # Consumidor idempotente: eventId deduplicado en Redis con SETNX + TTL
+  idempotency:
+    key-prefix: "assistant:evento:"
+    ttl: ${ASSISTANT_IDEMPOTENCY_TTL:PT24H}
+  # Vista materializada de estado-urgencias en Redis
+  estado-urgencias:
+    key-prefix: "assistant:urgencias:"
+  # RAG
+  rag:
+    top-k: ${ASSISTANT_RAG_TOP_K:4}
+    similarity-threshold: ${ASSISTANT_RAG_SIMILARITY_THRESHOLD:0.65}   # bajo este umbral -> "no existe protocolo disponible" (RN-05)
+    ingest-on-startup: ${ASSISTANT_RAG_INGEST_ON_STARTUP:true}

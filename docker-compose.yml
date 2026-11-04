@@ -1,0 +1,153 @@
+# Levanta toda la plataforma:  cp .env.example .env && docker compose up --build
+# Puertos publicados en el host:
+#   triage-service 8081 | clinical-assistant-service 8082 | postgres 5432 | kafka 29092 | redis 6379 | RedisInsight 8001
+name: vidacruz
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-triage}
+      POSTGRES_USER: ${POSTGRES_USER:-triage}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env (cp .env.example .env)}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  # Kafka en modo KRaft (broker+controller en un nodo, sin Zookeeper).
+  # INTERNAL (kafka:9092) para contenedores; EXTERNAL (localhost:29092) para ./gradlew bootRun en el host.
+  kafka:
+    image: apache/kafka:3.9.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    ports:
+      - "29092:29092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  # Job de un solo uso: crea los topics y termina (service_completed_successfully).
+  kafka-init:
+    image: apache/kafka:3.9.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic triaje.eventos --partitions 3 --replication-factor 1 &&
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic triaje.eventos.DLT --partitions 3 --replication-factor 1 &&
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
+
+  redis:
+    image: redis/redis-stack:7.4.0-v3
+    environment:
+      REDIS_ARGS: "--requirepass ${REDIS_PASSWORD:?Define REDIS_PASSWORD en .env (cp .env.example .env)} --appendonly yes"
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    ports:
+      - "6379:6379"
+      - "8001:8001"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  triage-service:
+    build:
+      context: ./triage-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: postgres
+      DB_NAME: ${POSTGRES_DB:-triage}
+      DB_USER: ${POSTGRES_USER:-triage}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      TRIAGE_API_KEY: ${TRIAGE_API_KEY:?Define TRIAGE_API_KEY en .env}
+      TRIAGE_SLA_CRITICO: ${TRIAGE_SLA_CRITICO:-5}
+      TRIAGE_SLA_URGENTE: ${TRIAGE_SLA_URGENTE:-10}
+      TRIAGE_SLA_URGENTE_2: ${TRIAGE_SLA_URGENTE_2:-30}
+      TRIAGE_SLA_NO_URGENTE: ${TRIAGE_SLA_NO_URGENTE:-60}
+      TRIAGE_SLA_NO_URGENTE_2: ${TRIAGE_SLA_NO_URGENTE_2:-120}
+      TRIAGE_ESCALAMIENTO_INTERVALO: ${TRIAGE_ESCALAMIENTO_INTERVALO:-PT30S}
+      OTEL_EXPORT_ENABLED: ${OTEL_EXPORT_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://localhost:4318/v1/traces}
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health/readiness | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  clinical-assistant-service:
+    build:
+      context: ./clinical-assistant-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      ASSISTANT_API_KEY: ${ASSISTANT_API_KEY:?Define ASSISTANT_API_KEY en .env}
+      LLM_API_KEY: ${LLM_API_KEY:?Define LLM_API_KEY en .env}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com}
+      LLM_CHAT_MODEL: ${LLM_CHAT_MODEL:-gpt-4o-mini}
+      LLM_EMBEDDING_MODEL: ${LLM_EMBEDDING_MODEL:-text-embedding-3-small}
+      OTEL_EXPORT_ENABLED: ${OTEL_EXPORT_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://localhost:4318/v1/traces}
+    ports:
+      - "8082:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health/readiness | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+volumes:
+  postgres-data:
+  kafka-data:
+  redis-data:

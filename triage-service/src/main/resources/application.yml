@@ -1,0 +1,104 @@
+# Configuracion base de triage-service. Todo parametrizable por variables de entorno.
+# Los secretos (DB_PASSWORD, TRIAGE_API_KEY) NO tienen valor por defecto: deben venir del entorno (.env).
+spring:
+  application:
+    name: triage-service
+  profiles:
+    default: local
+  autoconfigure:
+    exclude:
+      # No se genera usuario/clave en memoria: la autenticacion es por API key (X-API-Key).
+      - org.springframework.boot.autoconfigure.security.reactive.ReactiveUserDetailsServiceAutoConfiguration
+  r2dbc:
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:triage}
+    username: ${DB_USER:triage}
+    password: ${DB_PASSWORD}
+    pool:
+      initial-size: ${DB_POOL_INITIAL:5}
+      max-size: ${DB_POOL_MAX:20}
+  flyway:
+    # Flyway usa JDBC (solo al arrancar); la aplicacion en runtime usa exclusivamente R2DBC.
+    enabled: true
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:triage}
+    user: ${DB_USER:triage}
+    password: ${DB_PASSWORD}
+    locations: classpath:db/migration
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        delivery.timeout.ms: ${KAFKA_DELIVERY_TIMEOUT_MS:30000}
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,r2dbc
+      show-details: when-authorized
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  otlp:
+    tracing:
+      export:
+        enabled: ${OTEL_EXPORT_ENABLED:false}
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  structured:
+    format:
+      # JSON estructurado nativo de Boot (incluye MDC: correlationId, traceId, spanId). Vacio = texto plano.
+      console: ${LOG_FORMAT:logstash}
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.vidacruz: ${LOG_LEVEL_APP:INFO}
+
+# ---------------------------------------------------------------------------
+# Propiedades de negocio / operacion de triage
+# ---------------------------------------------------------------------------
+triage:
+  security:
+    api-key-header: X-API-Key
+    api-key: ${TRIAGE_API_KEY}
+  kafka:
+    topic: ${TRIAGE_KAFKA_TOPIC:triaje.eventos}
+    event-version: 1
+  # RN-02: SLA en minutos por nivel (sobrescribibles para probar el escalamiento sin esperar decenas de minutos)
+  sla:
+    minutos:
+      CRITICO: ${TRIAGE_SLA_CRITICO:5}
+      URGENTE: ${TRIAGE_SLA_URGENTE:10}
+      URGENTE_2: ${TRIAGE_SLA_URGENTE_2:30}
+      NO_URGENTE: ${TRIAGE_SLA_NO_URGENTE:60}
+      NO_URGENTE_2: ${TRIAGE_SLA_NO_URGENTE_2:120}
+  # RF-03: scheduler de escalamiento
+  escalamiento:
+    habilitado: ${TRIAGE_ESCALAMIENTO_HABILITADO:true}
+    intervalo: ${TRIAGE_ESCALAMIENTO_INTERVALO:PT30S}
+    batch-size: ${TRIAGE_ESCALAMIENTO_BATCH:100}
+  # Publicador del Transactional Outbox
+  outbox:
+    habilitado: ${TRIAGE_OUTBOX_HABILITADO:true}
+    intervalo: ${TRIAGE_OUTBOX_INTERVALO:PT1S}
+    batch-size: ${TRIAGE_OUTBOX_BATCH:100}
+    max-intentos: ${TRIAGE_OUTBOX_MAX_INTENTOS:10}

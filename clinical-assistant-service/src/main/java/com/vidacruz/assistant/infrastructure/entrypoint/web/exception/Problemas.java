@@ -35,6 +35,12 @@ public class Problemas {
 				texto(error.claveMensaje(), exchange, argumentos), exchange);
 	}
 
+	/** Error del catalogo con otra clave de mensaje (una variante del mismo error, p. ej. segun la fase del indice). */
+	public ProblemDetail crearConMensaje(ErrorApi error, ServerWebExchange exchange, String claveMensaje, Object... argumentos) {
+		return construir(error.status(), error.tipo(), texto(error.claveTitulo(), exchange),
+				texto(claveMensaje, exchange, argumentos), exchange);
+	}
+
 	/** 400 de validacion con la lista de campos invalidos. */
 	public ProblemDetail validacion(List<ErrorCampo> errores, String campos, ServerWebExchange exchange) {
 		ProblemDetail problema = crear(ErrorApi.VALIDACION, exchange, String.valueOf(errores.size()), campos);

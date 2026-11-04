@@ -78,7 +78,7 @@ public abstract class AbstractIntegrationTest {
 		redis.scan(ScanOptions.scanOptions().match("asistente:urgencias:*").count(500).build())
 				.flatMap(redis::unlink).blockLast(Duration.ofSeconds(10));
 		if (esperarIndiceListo()) {
-			await().atMost(Duration.ofSeconds(60)).until(estadoIndice::listo);
+			await().atMost(Duration.ofSeconds(60)).until(() -> estadoIndice.actual().listo());
 		}
 	}
 

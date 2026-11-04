@@ -20,7 +20,11 @@ import com.vidacruz.assistant.domain.model.ParametrosRecuperacion;
 import com.vidacruz.assistant.domain.model.RespuestaGenerada;
 import com.vidacruz.assistant.domain.model.SalidaGenerador;
 import com.vidacruz.assistant.domain.port.out.BuscadorProtocolosPort;
+import com.vidacruz.assistant.domain.model.EstadoIndice;
+import com.vidacruz.assistant.domain.model.ResultadoSincronizacion;
+import com.vidacruz.assistant.domain.model.enums.EstadoIndexacion;
 import com.vidacruz.assistant.domain.port.out.EstadoIndicePort;
+import java.time.Instant;
 import com.vidacruz.assistant.domain.port.out.GeneradorRespuestaPort;
 import com.vidacruz.assistant.domain.port.out.MetricasRagPort;
 import com.vidacruz.assistant.domain.service.ValidadorRespuesta;
@@ -37,13 +41,15 @@ class ConsultarProtocoloUseCaseTests {
 
 	BuscadorProtocolosPort buscador = mock(BuscadorProtocolosPort.class);
 	GeneradorRespuestaPort generador = mock(GeneradorRespuestaPort.class);
+	private static final Instant AHORA = Instant.parse("2026-11-04T15:00:00Z");
+
 	EstadoIndicePort estadoIndice = mock(EstadoIndicePort.class);
 	MetricasRagPort metricas = mock(MetricasRagPort.class);
 	ConsultarProtocoloUseCaseImpl useCase;
 
 	@BeforeEach
 	void preparar() {
-		when(estadoIndice.listo()).thenReturn(true);
+		when(estadoIndice.actual()).thenReturn(EstadoIndice.listo(new ResultadoSincronizacion(0, 0, 0, 7), AHORA));
 		useCase = new ConsultarProtocoloUseCaseImpl(buscador, generador, new ValidadorRespuesta(), estadoIndice, metricas,
 				PARAMETROS, SIN_PROTOCOLO);
 	}
@@ -160,10 +166,11 @@ class ConsultarProtocoloUseCaseTests {
 
 	@Test
 	void sinIndiceListoFallaConIndiceNoDisponibleYNoBuscaNiGenera() {
-		when(estadoIndice.listo()).thenReturn(false);
-		when(estadoIndice.motivo()).thenReturn("indexando");
+		when(estadoIndice.actual()).thenReturn(EstadoIndice.fallido("proveedor caido", AHORA));
 
-		assertThatThrownBy(this::consultar).isInstanceOf(IndiceNoDisponibleException.class).hasMessageContaining("indexando");
+		assertThatThrownBy(this::consultar).isInstanceOf(IndiceNoDisponibleException.class)
+				.hasMessageContaining("proveedor caido")
+				.extracting(e -> ((IndiceNoDisponibleException) e).estado()).isEqualTo(EstadoIndexacion.FALLIDO);
 		verifyNoInteractions(buscador, generador);
 		verify(metricas).consulta("degradado");
 	}

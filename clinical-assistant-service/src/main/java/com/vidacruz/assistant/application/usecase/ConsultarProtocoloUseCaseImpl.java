@@ -11,6 +11,7 @@ import com.vidacruz.assistant.domain.model.ParametrosRecuperacion;
 import com.vidacruz.assistant.domain.model.SalidaGenerador;
 import com.vidacruz.assistant.domain.model.ValidacionRespuesta;
 import com.vidacruz.assistant.domain.port.out.BuscadorProtocolosPort;
+import com.vidacruz.assistant.domain.model.EstadoIndice;
 import com.vidacruz.assistant.domain.port.out.EstadoIndicePort;
 import com.vidacruz.assistant.domain.port.out.GeneradorRespuestaPort;
 import com.vidacruz.assistant.domain.port.out.MetricasRagPort;
@@ -59,8 +60,9 @@ public class ConsultarProtocoloUseCaseImpl implements ConsultarProtocoloUseCase 
 	@Override
 	public Mono<RespuestaConsulta> consultar(ConsultarProtocoloComando comando) {
 		return Mono.defer(() -> {
-			if (!estadoIndice.listo()) {
-				return Mono.<RespuestaConsulta>error(new IndiceNoDisponibleException(estadoIndice.motivo()));
+			EstadoIndice indice = estadoIndice.actual();
+			if (!indice.listo()) {
+				return Mono.<RespuestaConsulta>error(new IndiceNoDisponibleException(indice.estado(), indice.detalleError()));
 			}
 			return buscador.buscar(comando.pregunta(), parametros)
 					.flatMap(recuperados -> recuperados.isEmpty()

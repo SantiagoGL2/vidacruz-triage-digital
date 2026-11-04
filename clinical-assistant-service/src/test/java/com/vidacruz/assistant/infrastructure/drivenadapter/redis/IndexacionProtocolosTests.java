@@ -56,7 +56,7 @@ class IndexacionProtocolosTests extends AbstractIntegrationTest {
 				"asistente:protocolo:proto-001:contraindicaciones", "asistente:protocolo:proto-002:criterios",
 				"asistente:protocolo:proto-002:acciones-iniciales", "asistente:protocolo:proto-003:clasificacion",
 				"asistente:protocolo:proto-003:rehidratacion");
-		assertThat(estadoIndice.fragmentosIndexados()).isEqualTo(7);
+		assertThat(estadoIndice.actual().fragmentosIndexados()).isEqualTo(7);
 	}
 
 	@Test

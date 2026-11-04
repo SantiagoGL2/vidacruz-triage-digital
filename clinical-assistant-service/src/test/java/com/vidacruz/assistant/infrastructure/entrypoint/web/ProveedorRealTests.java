@@ -130,7 +130,7 @@ class ProveedorRealTests {
 	ObjectMapper objectMapper;
 
 	private void esperarIndice() {
-		await().atMost(Duration.ofSeconds(180)).until(estadoIndice::listo);
+		await().atMost(Duration.ofSeconds(180)).until(() -> estadoIndice.actual().listo());
 	}
 
 	private JsonNode consultar(String pregunta) throws Exception {
@@ -231,7 +231,7 @@ class ProveedorRealTests {
 				assertThat(texto).as("no calcula un volumen").doesNotContain("500");
 			}
 		}
-		assertThat(estadoIndice.listo()).isTrue();
+		assertThat(estadoIndice.actual().listo()).isTrue();
 	}
 
 	// ------------------------------------------------------------------ fidelidad al protocolo citado

@@ -2,11 +2,13 @@ package com.vidacruz.assistant.infrastructure.entrypoint.scheduler;
 
 import com.vidacruz.assistant.application.port.in.IndexarProtocolosUseCase;
 import com.vidacruz.assistant.infrastructure.config.AsistenteRagProperties;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
 import reactor.core.Disposable;
+import reactor.core.Disposables;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
@@ -22,8 +24,8 @@ class IndexacionProtocolosArranque implements SmartLifecycle {
 
 	private final IndexarProtocolosUseCase indexar;
 	private final AsistenteRagProperties rag;
-	private volatile Disposable tarea;
-	private volatile boolean activo;
+	/** Un solo valor: null = detenido; si no, la tarea de indexacion (o NINGUNA si se asumio un indice existente). */
+	private final AtomicReference<Disposable> tarea = new AtomicReference<>();
 
 	IndexacionProtocolosArranque(IndexarProtocolosUseCase indexar, AsistenteRagProperties rag) {
 		this.indexar = indexar;
@@ -32,24 +34,23 @@ class IndexacionProtocolosArranque implements SmartLifecycle {
 
 	@Override
 	public void start() {
-		activo = true;
 		if (!rag.ingestOnStartup()) {
 			indexar.asumirIndiceExistente();
+			tarea.set(Disposables.disposed());
 			return;
 		}
-		tarea = Mono.defer(indexar::indexar)
+		tarea.set(Mono.defer(indexar::indexar)
 				.retryWhen(Retry.backoff(Long.MAX_VALUE, rag.ingesta().backoffInicial())
 						.maxBackoff(rag.ingesta().backoffMaximo())
 						.jitter(0.2)
 						.doBeforeRetry(senal -> log.warn("La indexacion de protocolos fallo (intento {}): {}. Se reintenta con backoff.",
 								senal.totalRetries() + 1, senal.failure().toString())))
-				.subscribe(resultado -> { }, error -> log.error("La indexacion de protocolos termino con error", error));
+				.subscribe(resultado -> { }, error -> log.error("La indexacion de protocolos termino con error", error)));
 	}
 
 	@Override
 	public void stop() {
-		activo = false;
-		Disposable actual = tarea;
+		Disposable actual = tarea.getAndSet(null);
 		if (actual != null) {
 			actual.dispose();
 		}
@@ -57,7 +58,7 @@ class IndexacionProtocolosArranque implements SmartLifecycle {
 
 	@Override
 	public boolean isRunning() {
-		return activo;
+		return tarea.get() != null;
 	}
 
 }

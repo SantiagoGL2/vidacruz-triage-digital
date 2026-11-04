@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.vidacruz.assistant.domain.exception.AsistenteNoDisponibleException;
 import com.vidacruz.assistant.domain.exception.EstadoUrgenciasNoDisponibleException;
 import com.vidacruz.assistant.domain.exception.IndiceNoDisponibleException;
+import com.vidacruz.assistant.domain.model.enums.EstadoIndexacion;
 import com.vidacruz.assistant.infrastructure.config.AsistenteRagProperties;
 import com.vidacruz.assistant.infrastructure.entrypoint.web.exception.Problemas.ErrorCampo;
 import com.vidacruz.assistant.infrastructure.entrypoint.web.filter.CorrelationIdWebFilter;
@@ -34,6 +35,9 @@ class GlobalExceptionHandler {
 	/** Segundos de Retry-After cuando Redis no responde. */
 	private static final long REINTENTO_ESTADO_SEGUNDOS = 5;
 
+	/** Variante del 503 del indice cuando la ultima indexacion fallo (la clave por defecto es la de «indexando»). */
+	private static final String CLAVE_INDICE_FALLIDO = "error.indice-no-disponible.mensaje-fallido";
+
 	private final AsistenteRagProperties rag;
 	private final Problemas problemas;
 
@@ -55,7 +59,10 @@ class GlobalExceptionHandler {
 	/** El indice de protocolos aun no esta listo (primera indexacion en curso o fallando). */
 	@ExceptionHandler(IndiceNoDisponibleException.class)
 	ResponseEntity<ProblemDetail> indiceNoDisponible(IndiceNoDisponibleException ex, ServerWebExchange exchange) {
-		return degradado(problemas.crear(ErrorApi.INDICE_NO_DISPONIBLE, exchange), rag.retryAfter().indice().toSeconds());
+		String clave = ex.estado() == EstadoIndexacion.FALLIDO ? CLAVE_INDICE_FALLIDO
+				: ErrorApi.INDICE_NO_DISPONIBLE.claveMensaje();
+		return degradado(problemas.crearConMensaje(ErrorApi.INDICE_NO_DISPONIBLE, exchange, clave),
+				rag.retryAfter().indice().toSeconds());
 	}
 
 	/** Redis no responde: modo degradado explicito, no un 500. */

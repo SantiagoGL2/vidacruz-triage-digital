@@ -1,44 +1,39 @@
 package com.vidacruz.assistant.infrastructure.drivenadapter.memory.adapter;
 
+import com.vidacruz.assistant.domain.model.EstadoIndice;
 import com.vidacruz.assistant.domain.model.ResultadoSincronizacion;
 import com.vidacruz.assistant.domain.port.out.EstadoIndicePort;
+import java.time.Clock;
+import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.stereotype.Component;
 
-/** Estado de la indexacion de protocolos en memoria (cada replica indexa y lo sabe por su cuenta). */
+/**
+ * Estado de la indexacion de protocolos en memoria (cada replica indexa y lo sabe por su cuenta). Se guarda como un unico
+ * valor inmutable: cada cambio lo reemplaza entero.
+ */
 @Component
 class EstadoIndiceMemoriaAdapter implements EstadoIndicePort {
 
-	private volatile boolean listo;
-	private volatile int fragmentos;
-	private volatile String motivo = "indexando los protocolos (aun no termino la primera indexacion)";
+	private final AtomicReference<EstadoIndice> estado = new AtomicReference<>(EstadoIndice.indexando());
+	private final Clock reloj;
+
+	EstadoIndiceMemoriaAdapter(Clock reloj) {
+		this.reloj = reloj;
+	}
 
 	@Override
-	public boolean listo() {
-		return listo;
+	public EstadoIndice actual() {
+		return estado.get();
 	}
 
 	@Override
 	public void marcarListo(ResultadoSincronizacion resultado) {
-		this.fragmentos = resultado.fragmentosIndexados();
-		this.motivo = "listo";
-		this.listo = true;
+		estado.set(EstadoIndice.listo(resultado, reloj.instant()));
 	}
 
 	@Override
-	public void marcarFallo(String motivo) {
-		this.listo = false;
-		this.fragmentos = 0;
-		this.motivo = motivo;
-	}
-
-	@Override
-	public int fragmentosIndexados() {
-		return fragmentos;
-	}
-
-	@Override
-	public String motivo() {
-		return motivo;
+	public void marcarFallo(String error) {
+		estado.set(EstadoIndice.fallido(error, reloj.instant()));
 	}
 
 }

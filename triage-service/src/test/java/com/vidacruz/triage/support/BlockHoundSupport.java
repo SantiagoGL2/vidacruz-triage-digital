@@ -9,7 +9,7 @@ import reactor.blockhound.BlockHound;
  * <p>
  * Las excepciones de abajo son bloqueos conocidos e inofensivos de librerias (no del codigo del proyecto):
  * el logging sincrono a consola, la semilla perezosa de UUID.randomUUID, la carga perezosa de clases y el lock
- * de microsegundos de la ventana del CircuitBreaker de Resilience4j.
+ * de microsegundos de la ventana del CircuitBreaker de Resilience4j y la generacion (unica, cacheada) del OpenAPI de springdoc.
  */
 public final class BlockHoundSupport {
 
@@ -33,6 +33,17 @@ public final class BlockHoundSupport {
 					.allowBlockingCallsInside("io.github.resilience4j.circuitbreaker.internal.CircuitBreakerStateMachine", "onError")
 					.allowBlockingCallsInside("io.github.resilience4j.circuitbreaker.internal.CircuitBreakerStateMachine", "onSuccess")
 					.allowBlockingCallsInside("io.github.resilience4j.circuitbreaker.internal.CircuitBreakerStateMachine", "acquirePermission")
+					// El contexto de mapeo de Spring Data protege su mapa de entidades con un ReentrantReadWriteLock que se
+					// mantiene microsegundos; si otro hilo registra un tipo a la vez, el lector hace park() (falso positivo
+					// intermitente que ademas se disfraza de IllegalMonitorStateException). Las entidades se registran en
+					// el arranque (CalentamientoRepositorios), asi que la contencion es solo teorica.
+					.allowBlockingCallsInside("org.springframework.data.mapping.context.AbstractMappingContext", "getPersistentEntity")
+					// springdoc genera el documento OpenAPI de forma perezosa en la primera peticion a /v3/api-docs (escaneo
+					// del classpath + reflexion) y lo cachea; es solo documentacion y se puede apagar en produccion
+					.allowBlockingCallsInside("org.springdoc.api.AbstractOpenApiResource", "getOpenApi")
+					// el recurso estatico de Swagger UI (jar de webjars) se comprueba con ClassPathResource.isReadable en el
+					// resolver de recursos de WebFlux (limitacion de Spring); solo afecta a la pagina de documentacion
+					.allowBlockingCallsInside("org.springframework.core.io.ClassPathResource", "isReadable")
 					// primera carga de una clase desde un jar (p. ej. la primera vez que se arma un error): lectura de disco inevitable
 					.allowBlockingCallsInside("java.lang.ClassLoader", "loadClass")
 					.allowBlockingCallsInside("jdk.internal.loader.BuiltinClassLoader", "loadClassOrNull"));

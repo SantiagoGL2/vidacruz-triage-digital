@@ -37,6 +37,11 @@ triage:
       timeout: PT2S
       intentos: 2
       espera-reintento: PT0.1S
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
 management:
   otlp:
     tracing:

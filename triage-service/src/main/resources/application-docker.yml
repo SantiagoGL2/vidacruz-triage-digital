@@ -6,3 +6,10 @@ spring:
     url: jdbc:postgresql://${DB_HOST:postgres}:${DB_PORT:5432}/${DB_NAME:triage}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+
+# Swagger UI y /v3/api-docs encendidos fuera de produccion (SWAGGER_HABILITADO=false para apagarlos).
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_HABILITADO:true}
+  swagger-ui:
+    enabled: ${SWAGGER_HABILITADO:true}

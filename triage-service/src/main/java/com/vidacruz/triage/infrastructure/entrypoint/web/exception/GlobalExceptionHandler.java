@@ -3,6 +3,7 @@ package com.vidacruz.triage.infrastructure.entrypoint.web.exception;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
+import com.vidacruz.triage.application.exception.ParametroReporteInvalidoException;
 import com.vidacruz.triage.application.exception.PacienteNoEncontradoException;
 import com.vidacruz.triage.domain.exception.ConflictoConcurrenciaException;
 import com.vidacruz.triage.domain.exception.DatoClinicoInvalidoException;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.support.WebExchangeBindException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.MissingRequestValueException;
 import org.springframework.web.server.ServerWebInputException;
 
 /**
@@ -45,6 +47,19 @@ class GlobalExceptionHandler {
 				.map(e -> new ErrorCampo(e.getField(), e.getRejectedValue(), mensajeBeanValidation(e.getCode())))
 				.toList();
 		return validacion(errores, exchange);
+	}
+
+	/** Parametro de query/ruta obligatorio ausente: se nombra el parametro. */
+	@ExceptionHandler(MissingRequestValueException.class)
+	ProblemDetail parametroAusente(MissingRequestValueException ex, ServerWebExchange exchange) {
+		return validacion(List.of(new ErrorCampo(ex.getName(), null, "parametro obligatorio")), exchange);
+	}
+
+	/** Rango del reporte invalido (desde >= hasta, o mas grande que el maximo configurado). */
+	@ExceptionHandler(ParametroReporteInvalidoException.class)
+	ProblemDetail parametroReporteInvalido(ParametroReporteInvalidoException ex, ServerWebExchange exchange) {
+		Object valor = ex.valor() == null ? null : ex.valor().toString();
+		return validacion(List.of(new ErrorCampo(ex.parametro(), valor, ex.getMessage())), exchange);
 	}
 
 	/** JSON malformado, tipos invalidos, enum desconocido, UUID invalido, cuerpo ausente. */
@@ -135,6 +150,9 @@ class GlobalExceptionHandler {
 	private static String tipoLegible(Class<?> tipo) {
 		if (tipo == null) {
 			return "tipo valido";
+		}
+		if (java.time.temporal.TemporalAccessor.class.isAssignableFrom(tipo)) {
+			return "fecha ISO 8601 con zona u offset, ej. 2026-11-04T00:00:00-05:00";
 		}
 		if (tipo.isEnum()) {
 			return "uno de " + java.util.Arrays.toString(tipo.getEnumConstants());

@@ -12,8 +12,8 @@ import org.springframework.security.web.server.authentication.ServerAuthenticati
 import org.springframework.security.web.server.context.NoOpServerSecurityContextRepository;
 
 /**
- * Autenticacion por API key (header X-API-Key) sin sesion. Solo las probes de salud son publicas (las necesitan
- * Docker/Kubernetes); /triage/** y el resto de actuator exigen key valida. Los 401 salen como ProblemDetail.
+ * Autenticacion por API key (header X-API-Key) sin sesion. Solo las probes de salud (las necesitan
+ * Docker/Kubernetes) y la documentacion OpenAPI son publicas; /triage/** y el resto de actuator exigen key valida. Los 401 salen como ProblemDetail.
  */
 @Configuration
 @EnableWebFluxSecurity
@@ -40,6 +40,8 @@ public class SecurityConfig {
 				.addFilterAt(filtro, SecurityWebFiltersOrder.AUTHENTICATION)
 				.authorizeExchange(exchanges -> exchanges
 						.pathMatchers("/actuator/health/**").permitAll()
+						// Documentacion OpenAPI / Swagger UI: publica (su habilitacion se controla con springdoc.*.enabled)
+						.pathMatchers("/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**", "/webjars/**").permitAll()
 						.anyExchange().authenticated())
 				.build();
 	}

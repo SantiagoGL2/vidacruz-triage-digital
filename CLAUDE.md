@@ -51,6 +51,7 @@ com.vidacruz.<servicio>
     ├── entrypoint.scheduler  procesos de fondo reactivos (CicloPeriodico, Flux.interval) que llaman casos de uso
     ├── entrypoint.web   (adapters de entrada)
     │   ├── controller   <X>Controller; solo conocen application.port.in, command/result y dto
+    │   │   └── doc      EjemplosApi: constantes con los JSON de ejemplo que usa la documentación OpenAPI
     │   ├── dto.request  <X>Request   (records + Bean Validation de presencia/tipo)
     │   ├── dto.response <X>Response  (records)
     │   ├── exception    @RestControllerAdvice + fábrica de ProblemDetail
@@ -85,8 +86,8 @@ Reglas (las verifica `ArquitecturaTests`; si falla una, se corrige el código, n
   - **SQL estático → `@Query`** en interfaces `R2dbcRepository` dentro de `drivenadapter.postgres.repository` (`<X>Repository`). Los UPDATE/DELETE llevan `@Modifying` y devuelven `Mono<Integer>` con las filas afectadas; el adapter decide según ese valor (p. ej. `marcarEscalado`: 1 fila = escaló, 0 = ya estaba escalado, RN-03). `FOR UPDATE SKIP LOCKED` va también en un `@Query` y funciona dentro de la transacción reactiva del caso de uso.
   - Resultados que no son una entidad completa → records de proyección en `drivenadapter.postgres.projection` (`<X>Projection`).
   - Repositorios y proyecciones **no salen de `drivenadapter.postgres`**: solo los usan los adapters (ArchUnit lo verifica). Spring Data introspecciona la primera invocación de forma perezosa (lee el `.class` del disco), así que `CalentamientoRepositorios` ejecuta cada consulta una vez al arrancar para no bloquear el event loop.
-  - **`DatabaseClient` solo para SQL dinámico** (se arma en tiempo de ejecución: filtros opcionales, ORDER BY variable…), siempre con un comentario que explique por qué no cabe en un `@Query`. Hoy no hay ninguno.
-  - **Consultas muy largas** (p. ej. el reporte RF-05 con CTE/window functions) → archivo `.sql` en `src/main/resources/db/queries/` cargado por el adapter, no una cadena gigante en Java.
+  - **`DatabaseClient` solo para SQL dinámico** (se arma en tiempo de ejecución: filtros opcionales, ORDER BY variable…), siempre con un comentario que explique por qué no cabe en un `@Query`. Hoy el único `DatabaseClient` es el del reporte RF-05, justificado por la segunda regla.
+  - **Consultas muy largas** (p. ej. el reporte RF-05 con CTE/window functions) → archivo `.sql` en `src/main/resources/db/queries/` cargado por el adapter **una sola vez al arrancar** (no en cada petición) y ejecutado con `DatabaseClient` (`ReporteOperacionR2dbcAdapter`), no una cadena gigante en Java. Cada bloque (CTE) lleva un comentario breve; los parámetros son siempre con nombre.
 - El asistente aplica lo mismo; sus adapters específicos (`kafka`, `redis`, `ai`) cuelgan de `drivenadapter` y, si consume Kafka, el consumidor es un adapter de **entrada** (`infrastructure.entrypoint.messaging`).
 
 ## Decisiones de arquitectura (respetarlas)
@@ -106,6 +107,14 @@ Reglas (las verifica `ArquitecturaTests`; si falla una, se corrige el código, n
 - **Stack:** Java 21 (toolchain), Spring Boot **3.5.x**, Spring AI **1.1.x** (la 2.x exige Boot 4), Resilience4j 2.4 (`resilience4j-spring-boot3` + `resilience4j-reactor`), Flyway, Testcontainers **2.0.5**.
 
 ## Convenciones de código
+
+### Documentación OpenAPI (triage-service; aplicar igual en clinical-assistant-service)
+
+- Dependencia `springdoc-openapi-starter-webflux-ui` (2.8.x con Boot 3.5). Swagger UI en `/swagger-ui.html`, contrato en `/v3/api-docs`; ambos **públicos** (sin API key) y controlados por `SWAGGER_HABILITADO` (`true` en los perfiles `local` y `docker`, `false` por defecto: en producción se apagan).
+- **La documentación va en el propio controller** (sin interfaces): `@Tag` en la clase y, en cada método, `@Operation` (summary + descripción que cita la regla de negocio: RN-01, RF-03…), `@Parameter` en los parámetros y `@ApiResponses` con todos los códigos posibles (200/201, 400, 401, 404, 409, 500) usando `ProblemDetail` (`application/problem+json`) y ejemplos reales. Los JSON de ejemplo van como constantes en `controller.doc.EjemplosApi` para no inflar el controller.
+- Los DTOs de request/response llevan `@Schema` (descripción, ejemplo, `minimum`/`maximum` según el enunciado, valores del enum).
+- `OpenApiConfig` (en `infrastructure.config`) define título, versión, enlace al README y el `SecurityScheme` apiKey `X-API-Key` aplicado globalmente (botón *Authorize*).
+- **Nunca** anotaciones OpenAPI en `domain`, `application` ni `drivenadapter` (regla de `ArquitecturaTests`). Un endpoint nuevo no está terminado sin sus anotaciones, sus `@Schema` y su prueba en `OpenApiTests`.
 
 - Paquetes base: `com.vidacruz.triage` y `com.vidacruz.assistant`, con la misma estructura (sección «Estructura de paquetes»). `package-info.java` solo donde documente algo útil (reglas de la capa, por qué un paquete es especial); no se crean vacíos.
 - **Español para el dominio clínico**, tal como en el enunciado: `Paciente`, `NivelTriaje`, `EstadoPaciente`, `SignosVitales`, `fechaRegistro`, `slaMinutos`, `quejaPrincipal`; endpoints y JSON en español (`/triage/pacientes`, `estado`, `escalado`); tablas/columnas SQL en español `snake_case`. **Inglés para lo técnico**: `Controller`, `Repository`, `UseCase`, `Adapter`, `Properties`, `OutboxPublisher`, `SecurityConfig`.
@@ -156,6 +165,8 @@ docker compose up -d postgres kafka kafka-init redis   # solo infraestructura, p
 docker compose down -v           # apagar y borrar volúmenes
 ```
 
+Swagger UI: `http://localhost:8081/swagger-ui.html` (triage) · contrato OpenAPI: `/v3/api-docs`. Pulsar *Authorize* y pegar `TRIAGE_API_KEY`.
+
 Puertos del host: triage `8081`, asistente `8082`, PostgreSQL `5432`, Kafka (listener externo) `29092`, Redis `6379`, RedisInsight `8001`. Salud: `GET /actuator/health/readiness`.
 
 Perfiles: `local` (por defecto, hosts en localhost) · `docker` (hosts = nombres de servicio) · `test` (Testcontainers). Variables clave: ver `.env.example` (SLA por nivel `TRIAGE_SLA_*`, intervalo de evaluación del SLA `TRIAGE_SLA_INTERVALO_EVALUACION`, webhook de alertas `TRIAGE_ALERTAS_WEBHOOK_URL`, `LLM_*`, API keys).
@@ -167,6 +178,12 @@ Perfiles: `local` (por defecto, hosts en localhost) · `docker` (hosts = nombres
 - **No usar `@ServiceConnection`** ni `spring-boot-testcontainers`: Boot 3.5 solo reconoce los contenedores 1.x. Las propiedades se inyectan con `@DynamicPropertySource`.
 - Los tests de integración extienden `AbstractIntegrationTest` y obtienen Postgres/Kafka de `Contenedores` (singletons por JVM, no un contenedor por clase).
 - Los tests de integracion web (`PacienteApiTests`, `AtomicidadTransaccionalTests`) corren con **BlockHound** activo (`BlockHoundSupport`; la JVM de test lleva `-XX:+AllowRedefinitionToAddDeleteMethods`). Si BlockHound falla un test, hay una llamada bloqueante real en el event loop: arreglala o envuelvela en `boundedElastic`; solo se permiten excepciones de libreria en `BlockHoundSupport`.
+
+### Reporte de operación (RF-05, triage-service)
+
+- `GET /triage/reportes/operacion?desde&hasta` (ISO 8601 con offset, `[desde, hasta)`). Una sola consulta SQL en `db/queries/reporte-operacion.sql` (CTEs, `ROW_NUMBER`, `FILTER`, `percentile_cont`); Java solo mapea. Explicación, supuestos y EXPLAIN en `docs/reporte-operacion.md`.
+- Config: `triage.reportes.zona-horaria` (`America/Bogota`) y `triage.reportes.rango-maximo-dias` (31).
+- Tests (`ReporteOperacionTests`): dataset determinista insertado por SQL; cada test usa su propio día de 2020 porque la auditoría es append-only y no se puede limpiar.
 
 ### Procesos de fondo y alertas (triage-service)
 

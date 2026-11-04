@@ -30,6 +30,9 @@ import com.vidacruz.triage.domain.port.out.DeduplicacionEventosPort;
 import com.vidacruz.triage.domain.port.out.FlujoAlertasPort;
 import com.vidacruz.triage.domain.port.out.NotificadorAlertasPort;
 import com.vidacruz.triage.domain.port.out.PublicadorEventosPort;
+import com.vidacruz.triage.application.port.in.GenerarReporteOperacionUseCase;
+import com.vidacruz.triage.application.usecase.GenerarReporteOperacionUseCaseImpl;
+import com.vidacruz.triage.domain.port.out.ReporteOperacionPort;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
@@ -118,6 +121,12 @@ public class ApplicationConfig {
 	@Bean
 	SuscribirAlertasUseCase suscribirAlertasUseCase(FlujoAlertasPort flujo) {
 		return new SuscribirAlertasUseCaseImpl(flujo);
+	}
+
+	@Bean
+	GenerarReporteOperacionUseCase generarReporteOperacionUseCase(ReporteOperacionPort reporte,
+			TriageReportesProperties propiedades) {
+		return new GenerarReporteOperacionUseCaseImpl(reporte, propiedades.zonaHoraria(), propiedades.rangoMaximoDias());
 	}
 
 }

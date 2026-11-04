@@ -16,6 +16,7 @@ java {
 ext {
 	set('resilience4jVersion', '2.4.0')
 	set('wiremockVersion', '3.13.2')
+	set('springdocVersion', '2.8.13')
 	// Testcontainers 2.x (la gestionada por Boot 3.5 es 1.21.x, incompatible con Docker Engine reciente en Windows). Ver CLAUDE.md.
 	set('testcontainers.version', '2.0.5')
 }
@@ -29,6 +30,7 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webflux'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation "org.springdoc:springdoc-openapi-starter-webflux-ui:${springdocVersion}"   // Swagger UI + /v3/api-docs
 
 	// --- Persistencia reactiva (R2DBC) ---
 	implementation 'org.springframework.boot:spring-boot-starter-data-r2dbc'

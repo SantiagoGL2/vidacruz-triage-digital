@@ -152,7 +152,16 @@ class ArquitecturaTests {
 			.should().haveSimpleNameEndingWith("Response");
 
 	@ArchTest
-	static final ArchRule nombresDeControllers = classes().that().resideInAPackage("..web.controller..")
+	static final ArchRule nombresDeControllers = classes().that().resideInAPackage("..web.controller")
 			.should().haveSimpleNameEndingWith("Controller");
+
+	// ------------------------------------------------------------------ documentacion OpenAPI
+
+	/** OpenAPI/Swagger solo en la capa web (y su configuracion global): nunca en domain, application ni drivenadapter. */
+	@ArchTest
+	static final ArchRule openApiSoloEnLaCapaWeb = noClasses()
+			.that().resideOutsideOfPackages("..infrastructure.entrypoint.web..", "..infrastructure.config..")
+			.should().dependOnClassesThat().resideInAnyPackage("io.swagger..", "org.springdoc..")
+			.as("las anotaciones OpenAPI solo existen en entrypoint.web (y OpenApiConfig en config)");
 
 }

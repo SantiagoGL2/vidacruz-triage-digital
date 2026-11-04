@@ -48,6 +48,17 @@ spring:
       auto-offset-reset: earliest
       enable-auto-commit: false
 
+# Documentacion OpenAPI y Swagger UI. En produccion se apagan con SWAGGER_HABILITADO=false (los perfiles
+# local y docker la encienden por defecto).
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_HABILITADO:false}
+  swagger-ui:
+    enabled: ${SWAGGER_HABILITADO:false}
+    path: /swagger-ui.html
+    disable-swagger-default-url: true
+  default-produces-media-type: application/json
+
 server:
   port: ${SERVER_PORT:8080}
   shutdown: graceful
@@ -148,3 +159,7 @@ triage:
       ventana-circuit-breaker: 10
       umbral-fallos: 50
       espera-circuito-abierto: PT30S
+  # RF-05: reporte de operacion por hora. Las horas se agrupan en esta zona (IANA) y el rango maximo evita consultas enormes.
+  reportes:
+    zona-horaria: ${TRIAGE_REPORTES_ZONA:America/Bogota}
+    rango-maximo-dias: ${TRIAGE_REPORTES_RANGO_MAXIMO_DIAS:31}

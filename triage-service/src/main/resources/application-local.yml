@@ -21,3 +21,10 @@ triage:
       NO_URGENTE_2: ${TRIAGE_SLA_NO_URGENTE_2:5}
   outbox:
     intervalo: ${TRIAGE_OUTBOX_INTERVALO:PT1S}
+
+# Swagger UI y /v3/api-docs encendidos fuera de produccion (SWAGGER_HABILITADO=false para apagarlos).
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_HABILITADO:true}
+  swagger-ui:
+    enabled: ${SWAGGER_HABILITADO:true}

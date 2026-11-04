@@ -1,0 +1,10 @@
+// Agregadores para ejecutar los builds independientes desde la raíz.
+// assembleAll = compilar + empaquetar sin tests (-x no cruza a los builds incluidos).
+['build', 'test', 'assemble'].each { nombre ->
+    tasks.register("${nombre}All") {
+        group = 'build'
+        description = "Ejecuta :${nombre} en triage-service y clinical-assistant-service"
+        dependsOn gradle.includedBuild('triage-service').task(":${nombre}"),
+                  gradle.includedBuild('clinical-assistant-service').task(":${nombre}")
+    }
+}

@@ -1,0 +1,4 @@
+rootProject.name = 'vidacruz-triage-digital'
+
+includeBuild 'triage-service'
+includeBuild 'clinical-assistant-service'

@@ -22,6 +22,8 @@ ext {
 	set('springAiVersion', '1.1.8')
 	set('resilience4jVersion', '2.4.0')
 	set('wiremockVersion', '3.13.2')
+	// Testcontainers 2.x (la gestionada por Boot 3.5 es 1.21.x, incompatible con Docker Engine reciente en Windows). Ver CLAUDE.md.
+	set('testcontainers.version', '2.0.5')
 }
 
 dependencyManagement {
@@ -64,9 +66,8 @@ dependencies {
 	testImplementation 'io.projectreactor:reactor-test'
 	testImplementation 'org.springframework.security:spring-security-test'
 	testImplementation 'org.springframework.kafka:spring-kafka-test'
-	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
-	testImplementation 'org.testcontainers:junit-jupiter'
-	testImplementation 'org.testcontainers:kafka'
+	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+	testImplementation 'org.testcontainers:testcontainers-kafka'
 	testImplementation "org.wiremock:wiremock-standalone:${wiremockVersion}"  // mock HTTP del proveedor LLM
 	testCompileOnly 'org.projectlombok:lombok'
 	testAnnotationProcessor 'org.projectlombok:lombok'

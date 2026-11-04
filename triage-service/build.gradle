@@ -13,6 +13,11 @@ java {
 	}
 }
 
+ext {
+	// Testcontainers 2.x (la gestionada por Boot 3.5 es 1.21.x, incompatible con Docker Engine reciente en Windows). Ver CLAUDE.md.
+	set('testcontainers.version', '2.0.5')
+}
+
 repositories {
 	mavenCentral()
 }
@@ -51,14 +56,18 @@ dependencies {
 	testImplementation 'io.projectreactor:reactor-test'
 	testImplementation 'org.springframework.security:spring-security-test'
 	testImplementation 'org.springframework.kafka:spring-kafka-test'
-	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
-	testImplementation 'org.testcontainers:junit-jupiter'
-	testImplementation 'org.testcontainers:postgresql'
-	testImplementation 'org.testcontainers:r2dbc'
-	testImplementation 'org.testcontainers:kafka'
+	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+	testImplementation 'org.testcontainers:testcontainers-postgresql'
+	testImplementation 'org.testcontainers:testcontainers-r2dbc'
+	testImplementation 'org.testcontainers:testcontainers-kafka'
+	testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.1'
 	testCompileOnly 'org.projectlombok:lombok'
 	testAnnotationProcessor 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
 }
 
 tasks.named('test') {

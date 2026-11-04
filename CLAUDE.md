@@ -58,6 +58,8 @@ com.vidacruz.<servicio>
     ├── drivenadapter    (adapters de salida)
     │   ├── postgres
     │   │   ├── adapter  <X>R2dbcAdapter / <X>Adapter: implementan domain.port.out (package-private)
+    │   │   ├── repository <X>Repository: R2dbcRepository con @Query/@Modifying (SQL estático)
+    │   │   ├── projection <X>Projection: records de resultados que no son una entidad
     │   │   ├── entity   <X>Entity: @Table de Spring Data R2DBC (NUNCA JPA)
     │   │   └── mapper   <X>Mapper: dominio <-> entity, explícito, uno por entidad
     │   ├── kafka        publicador del outbox hacia Kafka (triage) / productor-consumidor del asistente
@@ -79,7 +81,12 @@ Reglas (las verifica `ArquitecturaTests`; si falla una, se corrige el código, n
 - Los controllers solo usan puertos de entrada: nada de adapters, entities ni puertos de salida. `entrypoint` y `drivenadapter` no se conocen entre sí.
 - `@Table` solo en `infrastructure.drivenadapter.postgres.entity`, y las entities no salen de `drivenadapter.postgres`.
 - Nombres: `*UseCaseImpl`, `*Controller`, `*Request`, `*Response`, `*Entity`, `*Mapper`, `*Adapter`. Los records que viajan por un caso de uso van en `command`/`result`; si son conceptos de negocio, en `domain.model`.
-- Persistencia: `R2dbcEntityTemplate` para lo estándar (insert explícito porque el id lo asigna la aplicación, select por id, update con `@Version`) y `DatabaseClient` solo para SQL especial (UPDATE condicional del escalamiento, `FOR UPDATE SKIP LOCKED`, reportes).
+- Persistencia: `R2dbcEntityTemplate` para lo estándar (insert explícito porque el id lo asigna la aplicación, select por id, update con `@Version`).
+  - **SQL estático → `@Query`** en interfaces `R2dbcRepository` dentro de `drivenadapter.postgres.repository` (`<X>Repository`). Los UPDATE/DELETE llevan `@Modifying` y devuelven `Mono<Integer>` con las filas afectadas; el adapter decide según ese valor (p. ej. `marcarEscalado`: 1 fila = escaló, 0 = ya estaba escalado, RN-03). `FOR UPDATE SKIP LOCKED` va también en un `@Query` y funciona dentro de la transacción reactiva del caso de uso.
+  - Resultados que no son una entidad completa → records de proyección en `drivenadapter.postgres.projection` (`<X>Projection`).
+  - Repositorios y proyecciones **no salen de `drivenadapter.postgres`**: solo los usan los adapters (ArchUnit lo verifica). Spring Data introspecciona la primera invocación de forma perezosa (lee el `.class` del disco), así que `CalentamientoRepositorios` ejecuta cada consulta una vez al arrancar para no bloquear el event loop.
+  - **`DatabaseClient` solo para SQL dinámico** (se arma en tiempo de ejecución: filtros opcionales, ORDER BY variable…), siempre con un comentario que explique por qué no cabe en un `@Query`. Hoy no hay ninguno.
+  - **Consultas muy largas** (p. ej. el reporte RF-05 con CTE/window functions) → archivo `.sql` en `src/main/resources/db/queries/` cargado por el adapter, no una cadena gigante en Java.
 - El asistente aplica lo mismo; sus adapters específicos (`kafka`, `redis`, `ai`) cuelgan de `drivenadapter` y, si consume Kafka, el consumidor es un adapter de **entrada** (`infrastructure.entrypoint.messaging`).
 
 ## Decisiones de arquitectura (respetarlas)

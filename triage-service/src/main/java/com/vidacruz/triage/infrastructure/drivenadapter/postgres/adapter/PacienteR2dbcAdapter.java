@@ -9,10 +9,11 @@ import com.vidacruz.triage.domain.model.PacienteVersionado;
 import com.vidacruz.triage.domain.port.out.PacienteRepositoryPort;
 import com.vidacruz.triage.infrastructure.drivenadapter.postgres.entity.PacienteEntity;
 import com.vidacruz.triage.infrastructure.drivenadapter.postgres.mapper.PacienteMapper;
+import com.vidacruz.triage.infrastructure.drivenadapter.postgres.projection.PacienteIdProjection;
+import com.vidacruz.triage.infrastructure.drivenadapter.postgres.repository.PacienteRepository;
 import java.time.Instant;
 import java.util.UUID;
 import org.springframework.dao.OptimisticLockingFailureException;
-import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
@@ -20,37 +21,18 @@ import reactor.core.publisher.Mono;
 
 /**
  * Operaciones estandar con {@link R2dbcEntityTemplate}: insert explicito (el id lo asigna la aplicacion),
- * select por id y update con {@code @Version}. {@code DatabaseClient} queda reservado para el SQL especial
- * (UPDATE condicional del escalamiento, SKIP LOCKED, reportes).
+ * select por id y update con {@code @Version}. El SQL especial del escalamiento es estatico y vive en
+ * {@link PacienteRepository}.
  */
 @Component
 class PacienteR2dbcAdapter implements PacienteRepositoryPort {
 
-	/** Candidatos al escalamiento: SLA guardado en el paciente vencido (estrictamente), del mas antiguo al mas nuevo. */
-	private static final String IDS_CON_SLA_VENCIDO = """
-			SELECT id FROM pacientes
-			 WHERE estado = 'REGISTRADO' AND escalado = false
-			   AND fecha_registro + (sla_minutos * INTERVAL '1 minute') < :ahora
-			 ORDER BY fecha_registro
-			 LIMIT :limite
-			""";
-
-	/**
-	 * UPDATE condicional atomico (RN-03). Sube tambien la version: si un cambio de estado concurrente leyo antes
-	 * del escalamiento, su UPDATE con la version vieja falla (409) en vez de pisar el flag escalado.
-	 */
-	private static final String MARCAR_ESCALADO = """
-			UPDATE pacientes
-			   SET escalado = true, fecha_escalamiento = :fecha, version = version + 1
-			 WHERE id = :id AND escalado = false AND estado = 'REGISTRADO'
-			""";
-
 	private final R2dbcEntityTemplate template;
-	private final DatabaseClient db;
+	private final PacienteRepository repositorio;
 
-	PacienteR2dbcAdapter(R2dbcEntityTemplate template) {
+	PacienteR2dbcAdapter(R2dbcEntityTemplate template, PacienteRepository repositorio) {
 		this.template = template;
-		this.db = template.getDatabaseClient();
+		this.repositorio = repositorio;
 	}
 
 	@Override
@@ -74,14 +56,13 @@ class PacienteR2dbcAdapter implements PacienteRepositoryPort {
 
 	@Override
 	public Flux<UUID> buscarIdsConSlaVencido(Instant ahora, int limite) {
-		return db.sql(IDS_CON_SLA_VENCIDO).bind("ahora", ahora).bind("limite", limite)
-				.map(fila -> fila.get("id", UUID.class)).all();
+		return repositorio.buscarIdsConSlaVencido(ahora, limite).map(PacienteIdProjection::id);
 	}
 
 	@Override
 	public Mono<Boolean> marcarEscalado(UUID id, Instant fechaEscalamiento) {
-		return db.sql(MARCAR_ESCALADO).bind("fecha", fechaEscalamiento).bind("id", id)
-				.fetch().rowsUpdated().map(filas -> filas == 1);
+		// La fila afectada decide la idempotencia (RN-03): 1 = esta llamada escalo; 0 = otro ya lo hizo o ya no es REGISTRADO.
+		return repositorio.marcarEscalado(id, fechaEscalamiento).map(filas -> filas == 1);
 	}
 
 }

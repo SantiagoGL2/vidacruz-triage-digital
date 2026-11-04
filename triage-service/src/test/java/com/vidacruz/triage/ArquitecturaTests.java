@@ -121,6 +121,16 @@ class ArquitecturaTests {
 	static final ArchRule lasEntitiesNoSalenDePostgres = noClasses().that().resideOutsideOfPackage("..infrastructure.drivenadapter.postgres..")
 			.should().dependOnClassesThat().resideInAPackage("..drivenadapter.postgres.entity..");
 
+	/** Los repositorios Spring Data y las proyecciones son detalle de drivenadapter.postgres: solo sus adapters los usan. */
+	@ArchTest
+	static final ArchRule repositoriosYProyeccionesNoSalenDePostgres = noClasses()
+			.that().resideOutsideOfPackage("..infrastructure.drivenadapter.postgres..")
+			.should().dependOnClassesThat().resideInAnyPackage("..postgres.repository..", "..postgres.projection..");
+
+	@ArchTest
+	static final ArchRule repositoriosSonInterfaces = classes().that().resideInAPackage("..postgres.repository..")
+			.should().beInterfaces().andShould().haveSimpleNameEndingWith("Repository");
+
 	@ArchTest
 	static final ArchRule sinJpa = noClasses().should().dependOnClassesThat().resideInAnyPackage(
 			"jakarta.persistence..", "javax.persistence..", "org.springframework.data.jpa..")

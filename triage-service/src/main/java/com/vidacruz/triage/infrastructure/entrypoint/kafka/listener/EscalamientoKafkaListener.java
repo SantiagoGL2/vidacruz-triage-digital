@@ -7,15 +7,21 @@ import com.vidacruz.triage.application.context.ContextoCorrelacion;
 import com.vidacruz.triage.application.port.in.NotificarEscalamientoUseCase;
 import com.vidacruz.triage.domain.event.EventoTriaje;
 import com.vidacruz.triage.domain.model.enums.NivelTriaje;
+import com.vidacruz.triage.infrastructure.config.TriageAlertasProperties;
 import com.vidacruz.triage.infrastructure.entrypoint.kafka.exception.EventoInvalidoException;
+import java.time.Duration;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
-import reactor.core.publisher.Mono;
 
 /**
  * RF-06: consume {@code triaje.eventos} con su propio consumer group y procesa solo {@code paciente_escalado}.
- * El metodo devuelve un Mono (spring-kafka lo espera y hace el ack al completar), sin bloquear el hilo del consumidor.
- * Un mensaje ilegible lanza {@link EventoInvalidoException}: no se reintenta y el DefaultErrorHandler lo manda a la DLT.
+ * <p>
+ * El procesamiento es <b>sincrono por registro</b> (ADR 0004): el hilo del consumidor Kafka (dedicado, nunca el event
+ * loop) espera el resultado del caso de uso con {@code block(timeout)}. Asi el offset se confirma solo al terminar y
+ * cualquier error, incluido uno inesperado dentro del caso de uso, llega al {@code DefaultErrorHandler}: se reintenta
+ * con backoff y, agotados los reintentos, va a la DLT. (Un listener que devuelve {@code Mono} pierde los errores que
+ * ocurren dentro del Mono en spring-kafka 3.3.) Un mensaje ilegible lanza {@link EventoInvalidoException}: no se
+ * reintenta y va directo a la DLT.
  */
 @Component
 class EscalamientoKafkaListener {
@@ -24,24 +30,29 @@ class EscalamientoKafkaListener {
 
 	private final NotificarEscalamientoUseCase notificar;
 	private final ObjectMapper objectMapper;
+	private final Duration timeout;
 
-	EscalamientoKafkaListener(NotificarEscalamientoUseCase notificar, ObjectMapper objectMapper) {
+	EscalamientoKafkaListener(NotificarEscalamientoUseCase notificar, ObjectMapper objectMapper,
+			TriageAlertasProperties alertas) {
 		this.notificar = notificar;
 		this.objectMapper = objectMapper;
+		this.timeout = alertas.consumidor().timeoutProcesamiento();
 	}
 
 	@KafkaListener(id = "alertas-escalamiento", idIsGroup = false,
 			topics = "${triage.kafka.topic}",
 			groupId = "${triage.alertas.consumidor.group-id}",
 			autoStartup = "${triage.alertas.consumidor.habilitado}")
-	Mono<Void> alRecibir(String mensaje) {
+	void alRecibir(String mensaje) {
 		EventoTriaje evento = leer(mensaje);
 		if (!TIPO_ESCALADO.equals(evento.eventType())) {
-			return Mono.empty();
+			return;
 		}
-		return notificar.notificar(comando(evento))
+		// block() relanza las RuntimeException tal cual; un timeout lanza IllegalStateException (se reintenta)
+		notificar.notificar(comando(evento))
 				.contextWrite(ctx -> ctx.put(ContextoCorrelacion.CLAVE,
-						evento.correlationId() == null ? ContextoCorrelacion.SIN_CORRELACION : evento.correlationId()));
+						evento.correlationId() == null ? ContextoCorrelacion.SIN_CORRELACION : evento.correlationId()))
+				.block(timeout);
 	}
 
 	private EventoTriaje leer(String mensaje) {

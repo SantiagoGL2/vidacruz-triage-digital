@@ -1,5 +1,6 @@
 # Configuracion base de triage-service. Todo parametrizable por variables de entorno.
-# Los secretos (DB_PASSWORD, TRIAGE_API_KEY) NO tienen valor por defecto: deben venir del entorno (.env).
+# Los secretos (DB_PASSWORD, TRIAGE_API_KEY) NO tienen valor por defecto: deben venir del entorno o del .env de la raiz
+# (perfil local). La base de datos acepta DB_* o los nombres del .env (POSTGRES_PASSWORD, POSTGRES_USER, POSTGRES_DB); DB_* manda.
 spring:
   application:
     name: triage-service
@@ -18,18 +19,18 @@ spring:
       # No se genera usuario/clave en memoria: la autenticacion es por API key (X-API-Key).
       - org.springframework.boot.autoconfigure.security.reactive.ReactiveUserDetailsServiceAutoConfiguration
   r2dbc:
-    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:triage}
-    username: ${DB_USER:triage}
-    password: ${DB_PASSWORD}
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:${POSTGRES_DB:triage}}
+    username: ${DB_USER:${POSTGRES_USER:triage}}
+    password: ${DB_PASSWORD:${POSTGRES_PASSWORD}}
     pool:
       initial-size: ${DB_POOL_INITIAL:5}
       max-size: ${DB_POOL_MAX:20}
   flyway:
     # Flyway usa JDBC (solo al arrancar); la aplicacion en runtime usa exclusivamente R2DBC.
     enabled: true
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:triage}
-    user: ${DB_USER:triage}
-    password: ${DB_PASSWORD}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:${POSTGRES_DB:triage}}
+    user: ${DB_USER:${POSTGRES_USER:triage}}
+    password: ${DB_PASSWORD:${POSTGRES_PASSWORD}}
     locations: classpath:db/migration
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
@@ -42,6 +43,8 @@ spring:
         delivery.timeout.ms: ${KAFKA_DELIVERY_TIMEOUT_MS:10000}
         request.timeout.ms: ${KAFKA_REQUEST_TIMEOUT_MS:5000}
         max.block.ms: ${KAFKA_MAX_BLOCK_MS:5000}
+    listener:
+      ack-mode: record     # el offset se confirma por registro, solo cuando el procesamiento termino (ADR 0004)
     consumer:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
@@ -146,6 +149,7 @@ triage:
       habilitado: ${TRIAGE_ALERTAS_HABILITADO:true}
       group-id: ${TRIAGE_ALERTAS_GROUP:triage-alertas}
       reintentos: ${TRIAGE_ALERTAS_REINTENTOS:4}               # antes de enviar a la DLT
+      timeout-procesamiento: ${TRIAGE_ALERTAS_TIMEOUT:30s}     # tope de espera por evento en el hilo del consumidor (ADR 0004)
       backoff-inicial: ${TRIAGE_ALERTAS_BACKOFF_INICIAL:PT1S}
       backoff-maximo: ${TRIAGE_ALERTAS_BACKOFF_MAXIMO:PT10S}
       capacidad-deduplicacion: ${TRIAGE_ALERTAS_DEDUP:10000}   # eventId recordados en memoria

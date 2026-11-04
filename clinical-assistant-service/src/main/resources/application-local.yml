@@ -3,7 +3,7 @@
 # del repo; si existe, no hace falta exportarlos. Las variables de entorno reales tienen prioridad sobre el .env.
 spring:
   config:
-    import: optional:file:../.env[.properties]
+    import: optional:file:../.env[.properties],optional:file:./.env[.properties]
 
 logging:
   structured:

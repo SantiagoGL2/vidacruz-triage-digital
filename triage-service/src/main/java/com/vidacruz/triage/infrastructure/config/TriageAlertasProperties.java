@@ -11,6 +11,7 @@ public record TriageAlertasProperties(Consumidor consumidor, Sse sse, Webhook we
 			boolean habilitado,
 			String groupId,
 			int reintentos,
+			Duration timeoutProcesamiento,
 			Duration backoffInicial,
 			Duration backoffMaximo,
 			int capacidadDeduplicacion) {

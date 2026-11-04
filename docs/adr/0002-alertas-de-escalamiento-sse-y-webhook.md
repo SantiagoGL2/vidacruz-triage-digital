@@ -45,7 +45,9 @@ corre con varias réplicas.
 
 1. **Consumidor Kafka en `triage-service`** (`entrypoint/kafka`), con su propio consumer group (`triage-alertas`,
    configurable), que lee `triaje.eventos` y procesa **solo** `paciente_escalado`. Llama al caso de uso
-   `NotificarEscalamientoUseCase`; no toca adapters.
+   `NotificarEscalamientoUseCase`; no toca adapters. El listener es síncrono por registro (`block(timeout)` en el hilo
+   del consumidor, [ADR 0004](0004-consumo-sincrono-de-kafka-en-servicios-reactivos.md)) para que cualquier error llegue al
+   reintento/DLT.
 2. **Un puerto de salida `NotificadorAlertasPort` con dos adapters**, ambos activos a la vez y aislados entre sí
    (el caso de uso captura el error de cada canal):
    - **SSE** — `GET /triage/alertas/stream` (protegido con `X-API-Key`). Un `Sinks.many().multicast().directBestEffort()`

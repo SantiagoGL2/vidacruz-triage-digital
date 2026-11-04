@@ -94,7 +94,7 @@ Reglas (las verifica `ArquitecturaTests`; si falla una, se corrige el código, n
 
 - **Hexagonal por servicio**, con la estructura de la sección «Estructura de paquetes». Dependencias solo hacia adentro: infrastructure → application → domain. Se hace cumplir con ArchUnit (`ArquitecturaTests`), no con módulos Gradle (ver `docs/adr/0001-estructura-por-paquetes-con-archunit.md`).
 - **100 % reactivo:** WebFlux + `Mono`/`Flux`, R2DBC para PostgreSQL. **Cero llamadas bloqueantes en el event loop.** Lo inevitablemente bloqueante (p. ej. cliente LLM de Spring AI, Jedis del vector store) se envuelve con `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())`. Flyway es JDBC pero solo corre al arrancar.
-- **Kafka con `spring-kafka`** (NO reactor-kafka, en mantenimiento): `KafkaTemplate` envuelto con `Mono.fromFuture`. Topic `triaje.eventos`; mensajes JSON con envelope `{eventId (UUID), eventType, occurredAt, version, payload}`. Tipos: `paciente_registrado`, `paciente_en_consulta`, `paciente_escalado`, `paciente_alta`. Clave del mensaje = id del paciente (orden por paciente).
+- **Kafka con `spring-kafka`** (NO reactor-kafka, en mantenimiento): `KafkaTemplate` envuelto con `Mono.fromFuture`. Los **listeners son síncronos por registro** (`block(timeout)` en el hilo del consumidor, `ack-mode: record`); **no** devolver `Mono` desde un `@KafkaListener`: en spring-kafka 3.3 un fallo dentro del `Mono` se pierde (ADR 0004). Topic `triaje.eventos`; mensajes JSON con envelope `{eventId (UUID), eventType, occurredAt, version, payload}`. Tipos: `paciente_registrado`, `paciente_en_consulta`, `paciente_escalado`, `paciente_alta`. Clave del mensaje = id del paciente (orden por paciente).
 - **Transactional Outbox** en triage: cambio de estado + auditoría + evento en la **misma transacción R2DBC**; un publicador reactivo envía `outbox_eventos` a Kafka (`FOR UPDATE SKIP LOCKED`, seguro con varias réplicas; sin ShedLock porque no existe proveedor R2DBC y exigiría JDBC bloqueante).
 - **Consumidor idempotente** en el asistente: `eventId` deduplicado en Redis (`SET ... EX`) **dentro del mismo script Lua** que aplica el evento, para que sea atómico. Ver sección «Asistente: estado de urgencias».
 - **DLQ:** `triaje.eventos.DLT` con `DefaultErrorHandler` + `DeadLetterPublishingRecoverer`, backoff exponencial; excepciones no recuperables (JSON inválido, evento mal formado) directo a DLT.
@@ -111,7 +111,7 @@ Reglas (las verifica `ArquitecturaTests`; si falla una, se corrige el código, n
 ### Documentación OpenAPI (triage-service; aplicar igual en clinical-assistant-service)
 
 - Dependencia `springdoc-openapi-starter-webflux-ui` (2.8.x con Boot 3.5). Swagger UI en `/swagger-ui.html`, contrato en `/v3/api-docs`; ambos **públicos** (sin API key) y controlados por `SWAGGER_HABILITADO` (`true` en los perfiles `local` y `docker`, `false` por defecto: en producción se apagan).
-- **La documentación va en el propio controller** (sin interfaces): `@Tag` en la clase y, en cada método, `@Operation` (summary + descripción que cita la regla de negocio: RN-01, RF-03…), `@Parameter` en los parámetros y `@ApiResponses` con todos los códigos posibles (200/201, 400, 401, 404, 409, 500) usando `ProblemDetail` (`application/problem+json`) y ejemplos reales. Los JSON de ejemplo van como constantes en `controller.doc.EjemplosApi` para no inflar el controller.
+- **La documentación va en el propio controller, sin interfaces `*Api`** (convención real, la misma en triage y en el asistente): `@Tag` en la clase y, en cada método, `@Operation` (summary + descripción que cita la regla de negocio: RN-01, RF-03…), `@Parameter` en los parámetros y `@ApiResponses` con todos los códigos posibles (200/201, 400, 401, 404, 409, 500) usando `ProblemDetail` (`application/problem+json`) y ejemplos reales. Los JSON de ejemplo se comparten como constantes en `entrypoint.web.controller.doc.EjemplosApi` (única clase de ese paquete) para no inflar el controller.
 - Los DTOs de request/response llevan `@Schema` (descripción, ejemplo, `minimum`/`maximum` según el enunciado, valores del enum).
 - `OpenApiConfig` (en `infrastructure.config`) define título, versión, enlace al README y el `SecurityScheme` apiKey `X-API-Key` aplicado globalmente (botón *Authorize*).
 - **Nunca** anotaciones OpenAPI en `domain`, `application` ni `drivenadapter` (regla de `ArquitecturaTests`). Un endpoint nuevo no está terminado sin sus anotaciones, sus `@Schema` y su prueba en `OpenApiTests`.
@@ -126,7 +126,7 @@ Reglas (las verifica `ArquitecturaTests`; si falla una, se corrige el código, n
 
 ## Reglas de trabajo
 
-1. **No bloquear el event loop.** Nada de `.block()`, `Thread.sleep`, JDBC ni clientes síncronos fuera de `boundedElastic`. Usa BlockHound en tests si hace falta.
+1. **Nunca bloquear el event loop ni los schedulers de Reactor** (`parallel`, `single`): nada de `.block()`, `Thread.sleep`, JDBC ni clientes síncronos fuera de `boundedElastic`. Usa BlockHound en tests si hace falta. **Única excepción:** en el hilo de un consumidor Kafka (`@KafkaListener`, hilo dedicado del contenedor) se permite `block(timeout)` para garantizar el orden por partición y que el offset se confirme solo al terminar; solo en el listener, nunca en casos de uso, adapters ni controllers. Ver `docs/adr/0004-consumo-sincrono-de-kafka-en-servicios-reactivos.md` y el supuesto 89 de `docs/supuestos.md`.
 2. **Tests obligatorios por funcionalidad** (unitarios + integración; Testcontainers para PostgreSQL/Kafka/Redis; WireMock para el LLM). Mínimo del enunciado: clasificación E1-E6, transiciones válidas/inválidas, idempotencia del escalamiento, citas del RAG y caso «sin coincidencia, sin alucinación».
 3. **Commits pequeños con Conventional Commits** (`feat(triage): ...`, `fix(assistant): ...`, `chore:`, `docs:`, `test:`, `build:`, `ci:`). Un cambio lógico por commit, con su test.
 4. Consulta `docs/enunciado.md` ante cualquier duda de negocio; si hay ambigüedad, documenta el supuesto (ADR o README).
@@ -159,7 +159,7 @@ Desde la raíz (composite build; wrapper propio, misma versión de Gradle):
 Toda la plataforma (desde la raíz):
 
 ```bash
-cp .env.example .env             # primera vez; editar secretos
+cp .env.example .env             # primera vez; editar secretos (el perfil local de AMBOS servicios lo lee solo: spring.config.import)
 docker compose up --build        # postgres, kafka (KRaft) + topics, redis-stack y ambos servicios
 docker compose up -d postgres kafka kafka-init redis   # solo infraestructura, para bootRun en el host
 docker compose down -v           # apagar y borrar volúmenes
@@ -189,7 +189,7 @@ Perfiles: `local` (por defecto, hosts en localhost) · `docker` (hosts = nombres
 
 - **RF-04 parte B:** `EventosTriajeKafkaListener` (grupo `asistente-estado-urgencias`) → `AplicarEventoClinicoUseCase` → `EstadoUrgenciasPort` (Redis). `GET /asistente/estado-urgencias` lee la vista; **nunca** se llama a la API de triage (regla de ArchUnit). El envelope del evento se duplica en el asistente a propósito: ADR 0003.
 - **Dominio sin Redis:** `VistaUrgencias` es la especificación ejecutable de las reglas (registrado/consulta/escalado/alta, duplicados, desconocidos); el adapter las aplica de forma atómica con `resources/redis/aplicar-evento.lua` (un script por evento: dedupe por `eventId` + paciente + contadores + último evento). Si cambias una regla, cámbiala en **ambos** sitios: `ScriptLuaTests` compara Redis con el modelo.
-- **Listener síncrono por registro, no `Mono`:** en spring-kafka 3.3.16 un `Mono` que falla no llega al `DefaultErrorHandler` (se pierde el evento) y rompe el orden por paciente. El hilo del consumidor hace `block(timeout)` (hilo dedicado, no el event loop). **No cambiar a `Mono` sin repetir los tests de Redis caído y de DLT.**
+- **Listener síncrono por registro, no `Mono`** (igual que el consumidor de alertas de triage): ADR 0004. **No cambiar a `Mono` sin repetir los tests de Redis caído y de DLT.**
 - **Errores:** `ErrorHandlingDeserializer` + JSON; ilegible o incompleto → `triaje.eventos.DLT` directo; Redis caído → backoff exponencial y offset sin confirmar; `eventType` desconocido → ignorado (no DLT). `auto.offset.reset=earliest`: el topic debe retener los eventos de los pacientes activos (sin `compact`).
 - **Redis:** prefijo `asistente:urgencias:` (`ASSISTANT_REDIS_PREFIX`) para no chocar con el vector store del RAG. Spring AI está excluido del autoconfigurado hasta implementar el RAG (RF-04 parte A).
 - **Local:** el perfil `local` del asistente importa el `.env` de la raíz (`spring.config.import`), así que `./gradlew bootRun` basta con `docker compose up -d postgres kafka kafka-init redis`. Swagger UI: `http://localhost:8082/swagger-ui.html`.
@@ -199,6 +199,6 @@ Perfiles: `local` (por defecto, hosts en localhost) · `docker` (hosts = nombres
 
 - **Escalamiento por SLA** (RF-03): `EscalarPacientesVencidosUseCase`, disparado por `CicloPeriodico` cada `triage.sla.intervalo-evaluacion`. UPDATE condicional atómico por paciente en su propia transacción; solo quien afecta 1 fila audita y escribe el evento. El SLA es el guardado en el paciente (un cambio de configuración solo afecta a pacientes nuevos). SLA mínimo del dominio: 1 minuto; el perfil `local` usa 1-5 min y evaluación cada 5 s.
 - **Publicador del outbox**: `PublicarEventosPendientesUseCase` (`FOR UPDATE SKIP LOCKED`, un evento por paciente por ciclo, backoff exponencial, métricas `triage.outbox.*`). Kafka caído no rompe el registro.
-- **Alertas** (RF-06, ADR 0002): consumidor del grupo `triage-alertas` → `NotificarEscalamientoUseCase` → SSE (`GET /triage/alertas/stream`, con `X-API-Key`) y webhook opcional. Sin nombre del paciente. Mensajes inválidos → `triaje.eventos.DLT`.
+- **Alertas** (RF-06, ADR 0002; listener síncrono por registro, ADR 0004): consumidor del grupo `triage-alertas` → `NotificarEscalamientoUseCase` → SSE (`GET /triage/alertas/stream`, con `X-API-Key`) y webhook opcional. Sin nombre del paciente. Mensajes inválidos → `triaje.eventos.DLT`.
 - Apagar/encender: `triage.sla.habilitado`, `triage.outbox.habilitado`, `triage.alertas.consumidor.habilitado` (en el perfil `test` los tres arrancan **apagados**).
 - Tests de procesos: `RelojMutable` para vencer SLA, `KafkaDePrueba` (broker que se pausa), `AbstractPostgresTest` (solo BD) vs `AbstractIntegrationTest` (BD + Kafka compartido; el `@DynamicPropertySource` de la base prevalece sobre el del hijo). Las clases que encienden procesos usan `@DirtiesContext` y un `group-id` único.

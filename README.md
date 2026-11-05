@@ -1,6 +1,6 @@
 # VidaCruz Triage Digital
 
-![Java 21](https://img.shields.io/badge/Java-21-orange) ![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F) ![WebFlux](https://img.shields.io/badge/Spring-WebFlux%20%2B%20R2DBC-6DB33F) ![Kafka](https://img.shields.io/badge/Kafka-KRaft-231F20) ![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-336791) ![Redis Stack](https://img.shields.io/badge/Redis-Stack-DC382D) ![Azure AKS](https://img.shields.io/badge/Azure-AKS-0078D4) ![Tests](https://img.shields.io/badge/tests-476-brightgreen)
+![Java 21](https://img.shields.io/badge/Java-21-orange) ![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F) ![WebFlux](https://img.shields.io/badge/Spring-WebFlux%20%2B%20R2DBC-6DB33F) ![Kafka](https://img.shields.io/badge/Kafka-KRaft-231F20) ![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-336791) ![Redis Stack](https://img.shields.io/badge/Redis-Stack-DC382D) ![Azure AKS](https://img.shields.io/badge/Azure-AKS-0078D4) [![CI](https://github.com/SantiagoGL2/vidacruz-triage-digital/actions/workflows/ci.yml/badge.svg)](https://github.com/SantiagoGL2/vidacruz-triage-digital/actions/workflows/ci.yml) ![Tests](https://img.shields.io/badge/tests-478-brightgreen) ![Cobertura de lineas](https://img.shields.io/badge/cobertura%20(lineas)-96%25-brightgreen)
 
 Sistema de triaje digital para las urgencias de VidaCruz, hecho con dos microservicios reactivos (Spring WebFlux, R2DBC, Kafka):
 
@@ -8,6 +8,8 @@ Sistema de triaje digital para las urgencias de VidaCruz, hecho con dos microser
 * **`clinical-assistant-service`** responde preguntas sobre protocolos clínicos con **RAG y cita obligatoria, sin inventar contenido** (RN-05) y mantiene en Redis el estado de urgencias en tiempo real a partir de los eventos de Kafka. **El triaje nunca depende de la disponibilidad del asistente.**
 
 **Índice:** [1. Probar en Azure](#1-probar-en-azure) · [2. Ejecutar en local](#2-ejecutar-en-local-con-un-solo-comando) · [3. Arquitectura](#3-arquitectura) · [4. Requerimientos](#4-cómo-se-cumple-cada-requerimiento) · [5. Decisiones (ADR)](#5-decisiones-clave) · [6. Resiliencia](#6-resiliencia) · [7. IA / RAG](#7-ia--rag) · [8. Seguridad](#8-seguridad) · [9. Observabilidad](#9-observabilidad) · [10. Pruebas](#10-pruebas) · [11. Azure](#11-despliegue-en-azure) · [12. Limitaciones](#12-limitaciones-conocidas-y-siguientes-pasos) · [13. Supuestos](#13-supuestos) · [14. Uso de IA](#14-uso-de-ia-en-el-desarrollo)
+
+**¿Cómo verifico que se cumple todo el enunciado?** [`docs/trazabilidad.md`](docs/trazabilidad.md): cada requerimiento → dónde está implementado → qué pruebas lo verifican, más una sección de **brechas** conocidas. Cobertura: [`docs/cobertura.md`](docs/cobertura.md) · Trazas y métricas: [`docs/observabilidad.md`](docs/observabilidad.md).
 
 ---
 
@@ -111,9 +113,9 @@ Los `curl` de la sección 1 sirven igual cambiando las URLs por `http://localhos
 **Tests** (necesitan Docker en marcha: Testcontainers levanta PostgreSQL, Kafka y Redis):
 
 ```bash
-cd triage-service && ./gradlew test               # 302 tests
-cd clinical-assistant-service && ./gradlew test   # 174 tests (3 opcionales con proveedor real, ver sección 10)
-./gradlew testAll                                 # desde la raíz: ambos servicios
+cd triage-service && ./gradlew check              # 303 tests + cobertura (JaCoCo) con umbral
+cd clinical-assistant-service && ./gradlew check  # 175 tests (3 opcionales con proveedor real) + cobertura
+./gradlew testAll                                 # desde la raíz: los tests de ambos servicios (sin verificar el umbral)
 ```
 
 **Desarrollo con IDE:** `docker compose up -d postgres kafka kafka-init redis` y luego `./gradlew bootRun` dentro de cada servicio (perfil `local`, lee el `.env` de la raíz). Más comandos y convenciones: [`CLAUDE.md`](CLAUDE.md).
@@ -269,7 +271,7 @@ Estructura del repositorio: `triage-service/` · `clinical-assistant-service/` �
 | [0007](docs/adr/0007-autenticacion-por-api-key.md) Autenticación por API key | Una clave por servicio en `X-API-Key`, stateless, comparación en tiempo constante; evolución propuesta a Entra ID. |
 | [0008](docs/adr/0008-despliegue-en-aks.md) Despliegue en AKS | Kubernetes en un nodo con PostgreSQL, Kafka y Redis en el clúster; alternativa de producción con servicios administrados. |
 
-Otros documentos: [supuestos](docs/supuestos.md) (114 decisiones numeradas), [contrato de eventos](docs/eventos.md), [catálogo de errores](docs/errores.md), [reporte SQL](docs/reporte-operacion.md), [RAG](docs/asistente-rag.md), [despliegue en Azure](docs/despliegue-azure.md).
+Otros documentos: [supuestos](docs/supuestos.md) (114 decisiones numeradas), [contrato de eventos](docs/eventos.md), [catálogo de errores](docs/errores.md), [reporte SQL](docs/reporte-operacion.md), [RAG](docs/asistente-rag.md), [despliegue en Azure](docs/despliegue-azure.md), [observabilidad y trazas](docs/observabilidad.md), [cobertura](docs/cobertura.md), [trazabilidad de requerimientos](docs/trazabilidad.md).
 
 ---
 
@@ -343,13 +345,13 @@ curl -s localhost:8082/actuator/prometheus -H "X-API-Key: $ASSISTANT_API_KEY" | 
 curl -s localhost:8082/actuator/circuitbreakers -H "X-API-Key: $ASSISTANT_API_KEY"   # estado del circuit breaker del LLM
 ```
 
-* **Trazado distribuido (OpenTelemetry/OTLP):** implementado y **apagado por defecto** (`OTEL_EXPORT_ENABLED=true` y `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` lo activan).
+* **Trazado distribuido (OpenTelemetry/OTLP), a través de Kafka:** una petición queda en **una sola traza** que cruza triage y el asistente (HTTP → consultas SQL → outbox → Kafka → consumo → Redis). El salto asíncrono del outbox se resuelve guardando el `traceparent` en la fila del outbox y restaurándolo al publicar. Exportación **apagada por defecto**; con Jaeger: `OTEL_EXPORT_ENABLED=true docker compose --profile observabilidad up --build` y <http://localhost:16686>. Cómo verla, qué se traza y límites: [`docs/observabilidad.md`](docs/observabilidad.md).
 
 ---
 
 ## 10. Pruebas
 
-**476 tests** automatizados (302 en triage, 174 en el asistente), todos en verde; 3 más (`ProveedorRealTests`) se omiten sin `LLM_API_KEY` real y validan el RAG contra OpenAI. Usan **Testcontainers** (PostgreSQL, Kafka, Redis), **WireMock** como proveedor LLM simulado y **BlockHound** activo en los tests de integración.
+**478 tests** automatizados (303 en triage, 175 en el asistente), todos en verde; 3 de ellos (`ProveedorRealTests`) se omiten sin `LLM_API_KEY` real y validan el RAG contra OpenAI. Usan **Testcontainers** (PostgreSQL, Kafka, Redis), **WireMock** como proveedor LLM simulado y **BlockHound** activo en los tests de integración.
 
 | Qué cubren | Tests (clases principales) |
 |---|---|
@@ -366,7 +368,16 @@ curl -s localhost:8082/actuator/circuitbreakers -H "X-API-Key: $ASSISTANT_API_KE
 | **Arquitectura** (ArchUnit) y convenciones de literales | `ArquitecturaTests` (25 + 18 tests), `LiteralesProhibidosTests` |
 | Sin bloqueos en el event loop | `BlockHoundTests` y los tests de integración web |
 
-Ejecución: ver [sección 2](#2-ejecutar-en-local-con-un-solo-comando) (`./gradlew test` en cada servicio o `./gradlew testAll` en la raíz; ~1,5 min por servicio). Prueba opcional contra el proveedor real: `LLM_API_KEY=… ./gradlew test --tests '*ProveedorRealTests' -i` dentro de `clinical-assistant-service`.
+Ejecución: ver [sección 2](#2-ejecutar-en-local-con-un-solo-comando) (`./gradlew check` en cada servicio, ~2 min; `./gradlew testAll` en la raíz). Prueba opcional contra el proveedor real: `LLM_API_KEY=… ./gradlew test --tests '*ProveedorRealTests' -i` dentro de `clinical-assistant-service`.
+
+**Cobertura (JaCoCo)** — `./gradlew test` genera el reporte HTML/XML y `./gradlew check` hace fallar el build si baja del umbral (fijado unos puntos por debajo del valor actual). Capas y exclusiones justificadas en [`docs/cobertura.md`](docs/cobertura.md):
+
+| Servicio | Líneas | Ramas | Umbral (líneas / ramas) | domain (líneas) | application (líneas) |
+|---|---|---|---|---|---|
+| `triage-service` | **96.8 %** | **81.1 %** | ≥ 92 % / ≥ 76 % | 98.2 % | 95.5 % |
+| `clinical-assistant-service` | **95.5 %** | **78.1 %** | ≥ 91 % / ≥ 73 % | 96.9 % | 97.1 % |
+
+**CI:** [`ci.yml`](.github/workflows/ci.yml) ejecuta `./gradlew check` por servicio en cada push y PR a `main` (Testcontainers en `ubuntu-latest`) y sube los reportes de tests y cobertura como artefactos.
 
 ---
 
@@ -379,6 +390,8 @@ Desplegado en **AKS** (un nodo `Standard_D4s_v4`, plan Free) con **ACR Basic**; 
 ./infra/destroy.ps1     # borra el grupo de recursos completo
 ```
 
+**Despliegue continuo:** [`deploy.yml`](.github/workflows/deploy.yml) (manual, o tras un CI verde si se activa) construye las imágenes en el runner de GitHub, las sube al ACR con el hash corto de git y actualiza los Deployments de AKS, autenticándose con **OIDC** (sin secretos de larga duración). Los comandos para crear la identidad federada están propuestos en la guía (pendientes de ejecutar).
+
 Coste ≈ **6 USD/día** encendido (≈ 183 USD/mes). Arquitectura, costos, pasos, verificación y destrucción: [`docs/despliegue-azure.md`](docs/despliegue-azure.md) · decisiones: [ADR 0008](docs/adr/0008-despliegue-en-aks.md).
 
 ---
@@ -390,7 +403,7 @@ Coste ≈ **6 USD/día** encendido (≈ 183 USD/mes). Arquitectura, costos, paso
 | **HTTP sin TLS** en las URLs públicas: la API key viaja en claro. | Ingress/Application Gateway con certificado (cert-manager o Azure) y Swagger apagado. |
 | **La API key identifica a la aplicación, no a la persona**; sin roles; la auditoría no guarda el usuario; rotación manual. | Entra ID con roles por perfil clínico, usuario en la auditoría, Key Vault con rotación ([ADR 0007](docs/adr/0007-autenticacion-por-api-key.md)). |
 | **Datos dentro del clúster, un nodo, una réplica, sin backups ni alta disponibilidad**; borrar el grupo destruye los datos. Una actualización de AKS no cabe en la cuota (necesita un nodo extra). | PostgreSQL Flexible Server, Event Hubs con API Kafka y Azure Managed Redis, con varias réplicas ([ADR 0008](docs/adr/0008-despliegue-en-aks.md)). |
-| **ACR Tasks está bloqueado en la suscripción de prueba**: las imágenes se construyen con Docker local. Tampoco se pudo usar `Standard_B4ms` (AKS la rechaza); se usa `Standard_D4s_v4`. | Las imágenes las construye y publica el pipeline de CI con identidad federada. |
+| **ACR Tasks está bloqueado en la suscripción de prueba**: las imágenes se construyen con Docker local (o en el runner de GitHub con `deploy.yml`, que **todavía no se ha ejecutado**: falta crear la identidad federada). Tampoco se pudo usar `Standard_B4ms` (AKS la rechaza); se usa `Standard_D4s_v4`. | Las imágenes las construye y publica el pipeline de CI con identidad federada. |
 | **Swagger UI y el health detallado están encendidos en Azure** para poder probar; el detalle del índice incluye el mensaje de error del proveedor (visible solo con API key). | `SWAGGER_HABILITADO=false` y detalles de salud restringidos. |
 | **Readiness del asistente ligada al índice de protocolos**: con una clave de LLM inválida el pod de Azure queda `NotReady` y el balanceador no le envía tráfico (ni siquiera `estado-urgencias`). En local sí se puede usar (modo degradado). | Decisión a revisar: separar la readiness de la vista de la del RAG. |
 | **Calibración del umbral con una muestra pequeña** (3 protocolos, 8 preguntas): reformulaciones muy lejanas pueden recibir «sin protocolo» aunque el protocolo las responda. | Ampliar el corpus y repetir la calibración (`ProveedorRealTests`) al cambiar de modelo o de protocolos. |
@@ -398,7 +411,9 @@ Coste ≈ **6 USD/día** encendido (≈ 183 USD/mes). Arquitectura, costos, paso
 | **La vista de urgencias se reconstruye desde el inicio del topic**: depende de que `triaje.eventos` retenga los eventos de los pacientes activos (la retención por defecto de Kafka es de 7 días). | Fijar la retención o *compaction* según el flujo real ([supuesto 83](docs/supuestos.md)). |
 | **Privacidad:** el texto de la pregunta del médico se envía al proveedor de IA externo; no se envían datos de pacientes, pero una pregunta libre podría contenerlos. | Proveedor con acuerdo de tratamiento de datos o modelo alojado; filtrado de datos personales en la entrada. |
 
-Siguientes pasos naturales: pipeline de CI/CD, observabilidad en producción (Prometheus/Grafana, trazas OTLP), autenticación con Entra ID y roles, más protocolos en el corpus y listados/paginación de pacientes.
+Brechas de prueba conocidas (p. ej. no hay una prueba automática de punta a punta con los dos servicios, ni validación automática de `docker-compose` y de los manifests de Kubernetes): [`docs/trazabilidad.md`](docs/trazabilidad.md#brechas).
+
+Siguientes pasos naturales: crear la identidad federada y ejecutar el despliegue continuo, observabilidad en producción (Prometheus/Grafana, trazas OTLP), autenticación con Entra ID y roles, más protocolos en el corpus y listados/paginación de pacientes.
 
 ---
 

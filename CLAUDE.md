@@ -152,7 +152,8 @@ Ejecutar dentro de cada servicio (`cd triage-service` / `cd clinical-assistant-s
 
 ```bash
 ./gradlew build -x test          # compilar + empaquetar sin tests
-./gradlew test                   # tests (Testcontainers requiere Docker en marcha)
+./gradlew test                   # tests + reporte de cobertura (Testcontainers requiere Docker en marcha)
+./gradlew check                  # test + cobertura + verificación del umbral (lo que ejecuta el CI)
 ./gradlew build                  # compilar + tests
 ./gradlew bootRun                # levantar con perfil "local" (necesita la infra del compose y variables del .env)
 ./gradlew bootJar -x test        # jar ejecutable (build/libs/)
@@ -199,6 +200,14 @@ kubectl get pods,svc -n vidacruz       # estado en el clúster
 * **Nada de la cuenta se versiona:** el overlay lleva marcadores que `deploy.*` sustituye; los Secrets los crea `deploy.*` (`infra/.env.azure` y `.env` están en `.gitignore`); `k8s/secret.example.yaml` no tiene valores. Nunca imprimas claves ni el ID de suscripción.
 * Imágenes: `docker build --platform linux/amd64` + push al ACR (ACR Tasks / `az acr build` está bloqueado en suscripciones de prueba). En todos los pods, `enableServiceLinks: false` (si no, `KAFKA_PORT`/`REDIS_PORT` inyectadas rompen la configuración).
 * Nodo `Standard_D4s_v4`, 4 vCPU de cuota: una réplica de cada cosa y `maxSurge: 0`. Cuesta ≈ 6 USD/día encendido: destruir al terminar.
+
+### Cobertura, CI y trazas distribuidas
+
+* **Cobertura (JaCoCo, en ambos servicios):** `./gradlew test` deja el reporte en `build/reports/jacoco/test/` (`index.html` y `jacocoTestReport.xml`); `./gradlew check` = test + reporte + `jacocoTestCoverageVerification` (umbral de líneas y ramas en el `build.gradle`, unos puntos por debajo del valor real). Las exclusiones (`*Application`, `config/*Config`, `*Properties`, clases de constantes) están justificadas en `docs/cobertura.md`; `lombok.config` marca lo generado como `@Generated`. Al subir la cobertura, sube también el umbral; si baja de él, el build falla.
+* **CI (`.github/workflows/ci.yml`):** push y PR a `main`, un job por servicio con `./gradlew check`. **Deploy (`deploy.yml`):** manual o tras CI verde (si `DEPLOY_AUTOMATICO=true`); construye con Docker en el runner, sube al ACR y hace `kubectl set image`; autenticación OIDC sin secretos (comandos en `docs/despliegue-azure.md`, no se ejecutan sin confirmación).
+* **Trazas:** Micrometer Tracing + OpenTelemetry, exportación apagada por defecto (`OTEL_EXPORT_ENABLED`). Observación activa en `KafkaTemplate` y en los listener containers (`spring.kafka.*.observation-enabled`), r2dbc-proxy en triage (`ObservacionR2dbcConfig`), Lettuce en el asistente (`ObservacionRedisConfig`). El salto asíncrono del outbox se resuelve guardando el `traceparent` en `outbox_eventos` (migración `V4`) y restaurándolo al publicar (`ContextoTraza`). Jaeger: `OTEL_EXPORT_ENABLED=true docker compose --profile observabilidad up --build` → <http://localhost:16686>. Detalle y límites: `docs/observabilidad.md`.
+* **Reglas aprendidas con las trazas:** (1) el propagador W3C se declara explícito (`PropagacionTrazasConfig`): sin él Boot dejaba uno vacío y no salía ningún `traceparent`; (2) cualquier cosa nueva de tracing se **calienta en el arranque** (`CalentamientoTrazas`, `@Order` máximo): la primera vez, OpenTelemetry lee jars con `ServiceLoader` y BlockHound lo detecta si ocurre en el event loop; (3) en un `Mono` el span vive en el **contexto de Reactor**, no necesariamente en el hilo: captúralo con `deferContextual`, no con `tracer.currentSpan()`.
+* **Matriz de trazabilidad:** `docs/trazabilidad.md` enlaza cada requerimiento con su implementación y sus pruebas y lista las brechas. Si añades o cambias un requerimiento, actualízala.
 
 ### Testcontainers 2.x (decisión)
 

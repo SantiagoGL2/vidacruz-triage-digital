@@ -2,6 +2,7 @@ plugins {
 	id 'java'
 	id 'org.springframework.boot' version '3.5.16'
 	id 'io.spring.dependency-management' version '1.1.7'
+	id 'jacoco'
 }
 
 group = 'com.vidacruz'
@@ -35,6 +36,7 @@ dependencies {
 	// --- Persistencia reactiva (R2DBC) ---
 	implementation 'org.springframework.boot:spring-boot-starter-data-r2dbc'
 	implementation 'org.postgresql:r2dbc-postgresql'   // compile: Json (codec JSONB) del outbox
+	implementation 'io.r2dbc:r2dbc-proxy'               // spans por consulta SQL (ObservationProxyExecutionListener)
 
 	// --- Migraciones: Flyway es JDBC (bloqueante), solo corre al arrancar, antes de aceptar tráfico ---
 	implementation 'org.flywaydb:flyway-core'
@@ -70,6 +72,7 @@ dependencies {
 	testImplementation 'org.testcontainers:testcontainers-r2dbc'
 	testImplementation 'org.testcontainers:testcontainers-kafka'
 	testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.1'
+	testImplementation 'io.opentelemetry:opentelemetry-sdk-testing'   // InMemorySpanExporter: verifica la traza distribuida
 	testImplementation "org.wiremock:wiremock-standalone:${wiremockVersion}"   // webhook de alertas
 	testImplementation 'io.projectreactor.tools:blockhound:1.0.18.RELEASE'   // detecta llamadas bloqueantes en el event loop
 	testCompileOnly 'org.projectlombok:lombok'
@@ -85,4 +88,71 @@ tasks.named('test') {
 	useJUnitPlatform()
 	// BlockHound necesita redefinir clases en JDK 13+.
 	jvmArgs '-XX:+AllowRedefinitionToAddDeleteMethods'
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Cobertura (JaCoCo). `./gradlew test` deja el reporte en build/reports/jacoco/test/ (html/index.html y
+// jacocoTestReport.xml) y `./gradlew check` ademas verifica el umbral (jacocoTestCoverageVerification).
+// Resumen por capa y justificacion de las exclusiones: docs/cobertura.md.
+// ---------------------------------------------------------------------------------------------------------------------
+jacoco {
+	toolVersion = '0.8.13'
+}
+
+// Solo se excluye lo que no tiene logica propia que probar. Cada patron, con su motivo:
+def exclusionesCobertura = [
+	'**/*Application.class',                       // main() de Spring Boot: arranque, sin logica
+	'**/infrastructure/config/*Config.class',      // @Configuration: cableado de beans (se ejercita al levantar el contexto en los tests de integracion)
+	'**/infrastructure/config/*Properties*.class', // @ConfigurationProperties: contenedores de valores tipados, sin comportamiento
+	'**/controller/doc/EjemplosApi*.class',        // constantes con JSON de ejemplo para OpenAPI
+	'**/dto/ValoresApi.class',                     // constantes de compilacion para anotaciones de OpenAPI
+	'**/CabecerasHttp.class',                      // constantes de claves tecnicas (sin logica)
+	'**/CabecerasKafka.class',
+	'**/ClavesMdc.class',
+	'**/NombresMetricas.class',
+	'**/PropiedadesProblema.class',
+	'**/package-info.class',                       // solo documentacion
+]
+
+// Los reportes y la verificacion miran las mismas clases (las del codigo de produccion menos las exclusiones).
+def claseDeProduccion = {
+	files(sourceSets.main.output.classesDirs.files.collect { fileTree(dir: it, exclude: exclusionesCobertura) })
+}
+
+tasks.named('test') {
+	finalizedBy 'jacocoTestReport'
+}
+
+tasks.named('jacocoTestReport') {
+	dependsOn tasks.named('test')
+	classDirectories.setFrom(claseDeProduccion())
+	reports {
+		html.required = true
+		xml.required = true     // lo lee el CI para el resumen
+		csv.required = false
+	}
+}
+
+tasks.named('jacocoTestCoverageVerification') {
+	dependsOn tasks.named('test')
+	classDirectories.setFrom(claseDeProduccion())
+	violationRules {
+		rule {
+			element = 'BUNDLE'
+			limit {
+				counter = 'LINE'
+				value = 'COVEREDRATIO'
+				minimum = new BigDecimal('0.92')
+			}
+			limit {
+				counter = 'BRANCH'
+				value = 'COVEREDRATIO'
+				minimum = new BigDecimal('0.76')
+			}
+		}
+	}
+}
+
+tasks.named('check') {
+	dependsOn tasks.named('jacocoTestCoverageVerification')
 }

@@ -45,7 +45,9 @@ margen para un segundo nodo. La plataforma es: 2 servicios Spring, PostgreSQL, K
 
 **En producción las imágenes las construiría el pipeline de CI** (GitHub Actions / Azure DevOps): construir, escanear, firmar
 y publicar en el ACR con una identidad federada (OIDC), con el tag del commit; el despliegue consumiría ese tag. Construir
-desde el portátil de una persona es una concesión de este entorno de prueba, no un proceso a conservar.
+desde el portátil de una persona es una concesión de este entorno de prueba, no un proceso a conservar. Ese pipeline ya
+existe como [`deploy.yml`](../../.github/workflows/deploy.yml) (GitHub Actions, autenticación OIDC sin secretos de larga duración;
+ver `docs/despliegue-azure.md`), pendiente de crear la identidad federada.
 
 ## Reparto de recursos del nodo (B4ms → D4s_v4: 4 vCPU, 16 GiB)
 

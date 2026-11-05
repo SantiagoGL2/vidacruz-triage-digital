@@ -118,10 +118,83 @@ Prueba funcional (la que se ejecutó al desplegar, con resultado esperado):
 | `POST /asistente/consulta` «¿Cuáles son las medidas iniciales ante una crisis hipertensiva?» | `200`, respuesta con fuente `PROTO-001 / Medidas iniciales` |
 | `POST /asistente/consulta` sobre algo fuera del corpus | `200`, «No existe un protocolo disponible…», `fuentes: []` |
 
+## Despliegue continuo con GitHub Actions (OIDC)
+
+Dos workflows en [`.github/workflows/`](../.github/workflows):
+
+| Workflow | Cuándo | Qué hace |
+|---|---|---|
+| [`ci.yml`](../.github/workflows/ci.yml) | push y PR a `main` | un job por servicio (matriz): Java 21 (Temurin), caché de Gradle, `./gradlew check` (tests + JaCoCo + umbral de cobertura) y los reportes como artefactos. `ProveedorRealTests` se omite sola (no hay secretos). |
+| [`deploy.yml`](../.github/workflows/deploy.yml) | manual (`workflow_dispatch`) y, **si se activa**, tras un CI verde en `main` | construye las dos imágenes (`docker build --platform linux/amd64`), las sube al ACR con el hash corto de git como tag y actualiza los Deployments de AKS (`kubectl set image` + `rollout status`). |
+
+`deploy.yml` **reemplaza al `az acr build`**, que ACR Tasks bloquea en la suscripción de prueba: las imágenes se construyen en
+el runner de GitHub. Se autentica con **OIDC** (credenciales federadas): GitHub pide un token de corta vida a Entra ID para
+este repositorio y rama, así que **no hay ningún secreto de larga duración** en GitHub. Los identificadores (client, tenant y
+suscripción) y los nombres de recursos son *variables* del repositorio, no secretos.
+
+### Crear la identidad y la federación (una sola vez)
+
+> **No se han ejecutado.** Son los comandos propuestos; requieren permisos de propietario en la suscripción (para el rol) y
+> poder registrar aplicaciones en Entra ID. Ejecútalos con `az login` ya hecho y `gh auth login` (GitHub CLI) si quieres
+> fijar las variables desde la terminal (o créalas a mano en *Settings → Secrets and variables → Actions → Variables*).
+
+```bash
+# 0) Datos de partida (nada de esto se imprime ni se versiona)
+SUB=$(az account show --query id -o tsv)
+TENANT=$(az account show --query tenantId -o tsv)
+RG=rg-vidacruz-triage
+AKS=aks-vidacruz-triage
+ACR=$(az acr list -g "$RG" --query "[0].name" -o tsv)
+REPO=SantiagoGL2/vidacruz-triage-digital          # <propietario>/<repositorio> de GitHub
+
+# 1) Identidad (registro de aplicación + service principal), sin ninguna contraseña
+APP_ID=$(az ad app create --display-name gh-vidacruz-deploy --query appId -o tsv)
+az ad sp create --id "$APP_ID"
+
+# 2) Credencial federada: solo los workflows de ESTE repositorio y de la rama main pueden pedir token
+az ad app federated-credential create --id "$APP_ID" --parameters "{
+  \"name\": \"github-main\",
+  \"issuer\": \"https://token.actions.githubusercontent.com\",
+  \"subject\": \"repo:${REPO}:ref:refs/heads/main\",
+  \"audiences\": [\"api://AzureADTokenExchange\"]
+}"
+
+# 3) Permisos mínimos: subir imágenes al ACR y bajar las credenciales del clúster
+az role assignment create --assignee "$APP_ID" --role AcrPush \
+  --scope "$(az acr show -n "$ACR" --query id -o tsv)"
+az role assignment create --assignee "$APP_ID" --role "Azure Kubernetes Service Cluster User Role" \
+  --scope "$(az aks show -g "$RG" -n "$AKS" --query id -o tsv)"
+
+# 4) Variables del repositorio (no son secretos)
+gh variable set AZURE_CLIENT_ID       --repo "$REPO" --body "$APP_ID"
+gh variable set AZURE_TENANT_ID       --repo "$REPO" --body "$TENANT"
+gh variable set AZURE_SUBSCRIPTION_ID --repo "$REPO" --body "$SUB"
+gh variable set ACR_NAME              --repo "$REPO" --body "$ACR"
+gh variable set AKS_NAME              --repo "$REPO" --body "$AKS"
+gh variable set AKS_RESOURCE_GROUP    --repo "$REPO" --body "$RG"
+
+# 5) (Opcional) desplegar automáticamente tras cada CI verde en main
+gh variable set DEPLOY_AUTOMATICO     --repo "$REPO" --body true
+```
+
+Comprobar: *Actions → Deploy a AKS → Run workflow*; el resumen del job muestra el tag desplegado y los pods. Para retirar el
+acceso: `az ad app delete --id "$APP_ID"` (borra también la federación y los roles quedan huérfanos: elimínalos con
+`az role assignment delete --assignee "$APP_ID"`).
+
+Notas:
+
+* La credencial federada solo vale para `ref:refs/heads/main`: el despliegue manual debe lanzarse **desde `main`** (un PR o otra
+  rama no obtiene token). Para otras ramas o un *environment* de GitHub se añade otra credencial con su propio `subject`.
+* El workflow asume la infraestructura ya creada (`infra/deploy.*`: grupo, ACR, AKS, secretos e imágenes de terceros importadas).
+  Solo actualiza las imágenes de los dos servicios; si cambian los manifests de `k8s/`, aplícalos con `infra/deploy.* -Paso aplicar`.
+* Si `az ad app create` falla por permisos, la suscripción de prueba no deja registrar aplicaciones a ese usuario: pide el rol
+  *Application Developer* en Entra ID o usa una identidad administrada asignada por el usuario con credencial federada
+  (`az identity federated-credential create`).
+
 ## Problemas conocidos
 
 * `TasksOperationsNotAllowed` en `az acr build`: ACR Tasks no está permitido en suscripciones de prueba. Por eso las imágenes
-  se construyen con Docker local.
+  se construyen con Docker local (`infra/deploy.*`) o en el runner de GitHub ([`deploy.yml`](../.github/workflows/deploy.yml)).
 * `The VM size … is not allowed in your subscription`: AKS excluye ciertas series (la B) en suscripciones de prueba; usa otra
   talla de 4 vCPU con cuota (`-TamanoNodo`). Si cambias de talla, añade su familia de cuota a la tabla de `Paso-Cuota`.
 * Pod en `Pending`: casi siempre recursos (revisa `kubectl describe pod` y `kubectl describe node`). El nodo no tiene margen

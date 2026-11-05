@@ -1,0 +1,108 @@
+name: Deploy a AKS
+
+# Construye las dos imagenes en el runner (docker build, linux/amd64), las sube al ACR con el hash corto de git como tag y
+# actualiza los Deployments de AKS. Reemplaza al "az acr build" de infra/deploy.*: ACR Tasks esta bloqueado en la
+# suscripcion de prueba (TasksOperationsNotAllowed).
+#
+# Autenticacion con OIDC (federated credentials): no hay secretos de larga duracion. Los identificadores (client, tenant,
+# suscripcion) y los nombres de recursos son *variables* del repositorio, no secretos. Como crear la identidad y la
+# federacion: docs/despliegue-azure.md, seccion "Despliegue continuo con GitHub Actions (OIDC)".
+#
+# Disparadores:
+#   * workflow_dispatch  -> manual (Actions > Deploy a AKS > Run workflow)
+#   * workflow_run       -> automatico tras un CI verde en main, SOLO si la variable del repo DEPLOY_AUTOMATICO = 'true'
+on:
+  workflow_dispatch:
+    inputs:
+      referencia:
+        description: 'Commit, rama o tag a desplegar (vacio = la rama desde la que se lanza)'
+        required: false
+        default: ''
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: deploy-aks
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write   # necesario para pedir el token OIDC a GitHub
+
+env:
+  NAMESPACE: vidacruz
+
+jobs:
+  deploy:
+    name: construir, subir y desplegar
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Manual siempre; automatico solo si el CI fue exitoso, fue un push y el despliegue automatico esta activado.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       vars.DEPLOY_AUTOMATICO == 'true')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.event.inputs.referencia || github.sha }}
+
+      - name: Hash corto de git (tag de las imagenes)
+        id: version
+        run: echo "tag=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Login en Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login en el ACR
+        run: az acr login --name "${{ vars.ACR_NAME }}"
+
+      - name: Construir y subir las imagenes
+        env:
+          REGISTRO: ${{ vars.ACR_NAME }}.azurecr.io
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          for servicio in triage-service clinical-assistant-service; do
+            docker build --platform linux/amd64 -t "$REGISTRO/$servicio:$TAG" "$servicio"
+            docker push "$REGISTRO/$servicio:$TAG"
+          done
+
+      - name: Credenciales de AKS
+        run: |
+          az aks get-credentials --resource-group "${{ vars.AKS_RESOURCE_GROUP }}" --name "${{ vars.AKS_NAME }}" --overwrite-existing
+
+      - name: Actualizar los Deployments
+        env:
+          REGISTRO: ${{ vars.ACR_NAME }}.azurecr.io
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          kubectl -n "$NAMESPACE" set image deployment/triage-service \
+            triage-service="$REGISTRO/triage-service:$TAG"
+          kubectl -n "$NAMESPACE" set image deployment/clinical-assistant-service \
+            clinical-assistant-service="$REGISTRO/clinical-assistant-service:$TAG"
+
+      # maxSurge 0: primero se detiene el pod viejo y luego arranca el nuevo (no hay cuota para uno extra).
+      - name: Esperar el rollout
+        run: |
+          kubectl -n "$NAMESPACE" rollout status deployment/triage-service --timeout=420s
+          kubectl -n "$NAMESPACE" rollout status deployment/clinical-assistant-service --timeout=420s
+
+      - name: Resumen
+        if: always()
+        run: |
+          {
+            echo "### Despliegue en AKS"
+            echo "- Tag de imagen: \`${{ steps.version.outputs.tag }}\`"
+            echo "- Commit: \`${{ github.event.workflow_run.head_sha || github.sha }}\`"
+            echo
+            echo '```'
+            kubectl -n "$NAMESPACE" get deploy,pods -o wide 2>&1 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

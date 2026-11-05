@@ -1,0 +1,86 @@
+name: CI
+
+# Compila y prueba cada servicio (tests unitarios y de integracion con Testcontainers + cobertura JaCoCo).
+# ProveedorRealTests (RAG contra OpenAI real) se omite solo: necesita LLM_API_KEY y aqui no se inyectan secretos.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check (${{ matrix.servicio }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        servicio: [triage-service, clinical-assistant-service]
+    defaults:
+      run:
+        working-directory: ${{ matrix.servicio }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Cache de dependencias y del wrapper de Gradle (clave por archivos de build).
+      - uses: gradle/actions/setup-gradle@v4
+
+      # El wrapper puede llegar con fin de linea CRLF o sin permiso de ejecucion segun como se commiteo.
+      - name: Preparar gradlew
+        run: sed -i 's/\r$//' gradlew && chmod +x gradlew
+
+      # check = test + jacocoTestReport + jacocoTestCoverageVerification (umbral de cobertura). Docker ya esta en ubuntu-latest,
+      # asi que Testcontainers levanta PostgreSQL, Kafka y Redis sin configuracion extra.
+      - name: ./gradlew check
+        run: ./gradlew check --stacktrace
+
+      - name: Resumen de resultados
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.servicio }}"
+            python3 - <<'PY'
+          import glob, re
+          tests = fallos = omitidos = 0
+          for f in glob.glob('build/test-results/test/*.xml'):
+              m = re.search(r'tests="(\d+)" skipped="(\d+)" failures="(\d+)" errors="(\d+)"', open(f, encoding='utf-8').read(3000))
+              if m:
+                  tests += int(m[1]); omitidos += int(m[2]); fallos += int(m[3]) + int(m[4])
+          print(f"- Tests: **{tests}** (fallos: {fallos}, omitidos: {omitidos})")
+          import xml.etree.ElementTree as ET
+          try:
+              raiz = ET.parse('build/reports/jacoco/test/jacocoTestReport.xml').getroot()
+              for c in raiz.findall('counter'):
+                  if c.get('type') in ('LINE', 'BRANCH'):
+                      cub, per = int(c.get('covered')), int(c.get('missed'))
+                      nombre = 'lineas' if c.get('type') == 'LINE' else 'ramas'
+                      print(f"- Cobertura de {nombre}: **{100 * cub / (cub + per):.1f} %** ({cub}/{cub + per})")
+          except FileNotFoundError:
+              print("- Sin reporte de JaCoCo")
+          PY
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Reportes de tests y cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reportes-${{ matrix.servicio }}
+          path: |
+            ${{ matrix.servicio }}/build/reports/tests/test
+            ${{ matrix.servicio }}/build/reports/jacoco/test
+            ${{ matrix.servicio }}/build/test-results/test/*.xml
+          if-no-files-found: warn
+          retention-days: 14

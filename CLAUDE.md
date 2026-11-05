@@ -183,6 +183,23 @@ Puertos del host: triage `8081`, asistente `8082`, PostgreSQL `5432`, Kafka (lis
 
 Perfiles: `local` (por defecto, hosts en localhost) · `docker` (hosts = nombres de servicio) · `test` (Testcontainers). Variables clave: ver `.env.example` (SLA por nivel `TRIAGE_SLA_*`, intervalo de evaluación del SLA `TRIAGE_SLA_INTERVALO_EVALUACION`, webhook de alertas `TRIAGE_ALERTAS_WEBHOOK_URL`, `LLM_*`, API keys).
 
+### Despliegue en Azure (AKS)
+
+Decisiones en `docs/adr/0008-despliegue-en-aks.md`; guía, costos y verificación en `docs/despliegue-azure.md`. Requiere `az` (con `az login`), `kubectl`, Docker en marcha y `LLM_API_KEY` en el entorno o en el `.env` de la raíz.
+
+```bash
+./infra/deploy.sh cuota|plan|infra|imagenes|credenciales|secretos|aplicar|verificar   # por pasos, idempotente (deploy.ps1 -Paso <paso> en PowerShell)
+./infra/deploy.sh                      # todo: cuota -> infra -> imagenes -> credenciales -> secretos -> aplicar -> verificar
+kubectl kustomize k8s/overlays/azure   # ver los manifests renderizados (marcadores ACR_LOGIN_SERVER, IMAGE_TAG, DNS_LABEL_*)
+kubectl get pods,svc -n vidacruz       # estado en el clúster
+./infra/destroy.sh                     # BORRA el grupo de recursos (pide confirmación; destroy.ps1 en PowerShell)
+```
+
+* `infra/` = Bicep (grupo + ACR + AKS) y scripts; `k8s/base` + `k8s/overlays/azure` = Kustomize. Perfil de Spring `k8s` (`application-k8s.yml`, hosts = nombres de Service).
+* **Nada de la cuenta se versiona:** el overlay lleva marcadores que `deploy.*` sustituye; los Secrets los crea `deploy.*` (`infra/.env.azure` y `.env` están en `.gitignore`); `k8s/secret.example.yaml` no tiene valores. Nunca imprimas claves ni el ID de suscripción.
+* Imágenes: `docker build --platform linux/amd64` + push al ACR (ACR Tasks / `az acr build` está bloqueado en suscripciones de prueba). En todos los pods, `enableServiceLinks: false` (si no, `KAFKA_PORT`/`REDIS_PORT` inyectadas rompen la configuración).
+* Nodo `Standard_D4s_v4`, 4 vCPU de cuota: una réplica de cada cosa y `maxSurge: 0`. Cuesta ≈ 6 USD/día encendido: destruir al terminar.
+
 ### Testcontainers 2.x (decisión)
 
 - Se fuerza `testcontainers.version = 2.0.5` en ambos `build.gradle` (`ext`), sobrescribiendo la 1.21.x que gestiona Spring Boot 3.5. Motivo: la 1.21.x (docker-java 3.4.x) falla con `Could not find a valid Docker environment` / `Status 500` contra Docker Engine reciente en Windows.

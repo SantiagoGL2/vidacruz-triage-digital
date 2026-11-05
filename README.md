@@ -58,6 +58,18 @@ Flujo, prompt, umbral y resiliencia: [`docs/asistente-rag.md`](docs/asistente-ra
 * **Modo degradado:** si el proveedor no responde, `503` con «El asistente clínico no está disponible temporalmente; consulte los protocolos impresos». El resto del servicio
   (`/asistente/estado-urgencias`) y la readiness no se ven afectados.
 
+## Despliegue en Azure (AKS)
+
+Desplegado en **AKS** (un nodo, eastus) con PostgreSQL, Kafka y Redis Stack dentro del clúster; las imágenes están en un ACR. Guía, costos y cómo destruirlo: [`docs/despliegue-azure.md`](docs/despliegue-azure.md) · decisiones: [ADR 0008](docs/adr/0008-despliegue-en-aks.md).
+
+| Servicio | URL pública (HTTP) | Swagger UI |
+|---|---|---|
+| triage-service | <http://vidacruz-triage-lxwjvy.eastus.cloudapp.azure.com> | [`/swagger-ui.html`](http://vidacruz-triage-lxwjvy.eastus.cloudapp.azure.com/swagger-ui.html) |
+| clinical-assistant-service | <http://vidacruz-asistente-lxwjvy.eastus.cloudapp.azure.com> | [`/swagger-ui.html`](http://vidacruz-asistente-lxwjvy.eastus.cloudapp.azure.com/swagger-ui.html) |
+
+* Entorno de prueba y **temporal**: las URLs dejan de existir al ejecutar `infra/destroy.*`. Los endpoints de negocio exigen `X-API-Key` (la de este despliegue está en `infra/.env.azure`, que no se versiona); `/actuator/health/**` y Swagger son públicos.
+* Desplegar: `./infra/deploy.ps1` (o `./infra/deploy.sh`) · destruir: `./infra/destroy.ps1`. Requiere `az`, `kubectl`, Docker y `LLM_API_KEY`.
+
 ## Seguridad
 
 Los dos servicios se protegen con una **API key por servicio** en el header `X-API-Key` (decisión y límites en [ADR 0007](docs/adr/0007-autenticacion-por-api-key.md)). La clave sale de variables de entorno (`TRIAGE_API_KEY`, `ASSISTANT_API_KEY`; ver `.env.example`), nunca está en el código ni tiene valor por defecto.
@@ -85,6 +97,7 @@ Los dos servicios se protegen con una **API key por servicio** en el header `X-A
 * [`docs/supuestos.md`](docs/supuestos.md) — decisiones y supuestos.
 * [`docs/eventos.md`](docs/eventos.md) — contrato de los eventos Kafka (`triaje.eventos`).
 * [`docs/asistente-rag.md`](docs/asistente-rag.md) — el RAG del asistente: barreras anti-alucinación, prompt, umbral, resiliencia.
+* [`docs/despliegue-azure.md`](docs/despliegue-azure.md) — despliegue en Azure (AKS): arquitectura, costos, cómo desplegar, verificar y destruir.
 * [`docs/errores.md`](docs/errores.md) — catálogo de errores de la API (`type`, status, mensajes).
 * [`docs/reporte-operacion.md`](docs/reporte-operacion.md) — la consulta SQL del RF-05 explicada, supuestos y EXPLAIN.
 * [`docs/adr/`](docs/adr/) — decisiones de arquitectura.

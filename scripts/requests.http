@@ -1,0 +1,173 @@
+### VidaCruz Triage - peticiones de ejemplo (cliente HTTP de IntelliJ / VS Code con REST Client o httpyac)
+###
+### Entornos: scripts/http-client.env.json define las URLs ("local" y "azure"). Las API keys NO estan en el repositorio:
+### copia scripts/http-client.private.env.example.json a scripts/http-client.private.env.json (esta ignorado por git) y
+### rellena triageKey y asistenteKey. Elige el entorno en el selector del IDE.
+###
+### Los cuerpos van sin tildes a proposito (algunos clientes en Windows no envian UTF-8).
+
+### ============================================================ 1. Salud (publico)
+
+GET {{triage}}/actuator/health/readiness
+
+###
+
+GET {{asistente}}/actuator/health/readiness
+
+### ============================================================ 2. Registrar los pacientes de ejemplo E1-E6 (RF-01, RN-01)
+### Nivel esperado: E1 CRITICO, E2 URGENTE, E3 URGENTE_2, E4 NO_URGENTE, E5 NO_URGENTE_2, E6 CRITICO
+
+# @name registrarE1
+POST {{triage}}/triage/pacientes
+X-API-Key: {{triageKey}}
+Content-Type: application/json
+
+{"nombreCompleto":"Paciente E1","edad":58,"frecuenciaCardiaca":130,"presionSistolica":180,"presionDiastolica":110,"spo2":97,"temperatura":36.8,"dolor":8,"gcs":15,"quejaPrincipal":"Dolor toracico"}
+
+###
+
+# @name registrarE2
+POST {{triage}}/triage/pacientes
+X-API-Key: {{triageKey}}
+Content-Type: application/json
+
+{"nombreCompleto":"Paciente E2","edad":45,"frecuenciaCardiaca":95,"presionSistolica":150,"presionDiastolica":95,"spo2":91,"temperatura":37.0,"dolor":4,"gcs":15,"quejaPrincipal":"Dificultad para respirar"}
+
+###
+
+POST {{triage}}/triage/pacientes
+X-API-Key: {{triageKey}}
+Content-Type: application/json
+
+{"nombreCompleto":"Paciente E3","edad":45,"frecuenciaCardiaca":88,"presionSistolica":130,"presionDiastolica":85,"spo2":98,"temperatura":38.2,"dolor":6,"gcs":15,"quejaPrincipal":"Fiebre"}
+
+###
+
+# @name registrarE4
+POST {{triage}}/triage/pacientes
+X-API-Key: {{triageKey}}
+Content-Type: application/json
+
+{"nombreCompleto":"Paciente E4","edad":45,"frecuenciaCardiaca":72,"presionSistolica":120,"presionDiastolica":80,"spo2":99,"temperatura":36.5,"dolor":2,"gcs":15,"quejaPrincipal":"Herida por cortar"}
+
+###
+
+POST {{triage}}/triage/pacientes
+X-API-Key: {{triageKey}}
+Content-Type: application/json
+
+{"nombreCompleto":"Paciente E5","edad":45,"frecuenciaCardiaca":70,"presionSistolica":115,"presionDiastolica":75,"spo2":99,"temperatura":36.4,"dolor":0,"gcs":15,"quejaPrincipal":"Renovacion de recetario"}
+
+###
+
+POST {{triage}}/triage/pacientes
+X-API-Key: {{triageKey}}
+Content-Type: application/json
+
+{"nombreCompleto":"Paciente E6","edad":45,"frecuenciaCardiaca":35,"presionSistolica":80,"presionDiastolica":50,"spo2":85,"temperatura":35.9,"dolor":0,"gcs":6,"quejaPrincipal":"Inconsciente"}
+
+### ============================================================ 3. Validacion: datos fuera de rango -> 400 con todos los campos
+
+POST {{triage}}/triage/pacientes
+X-API-Key: {{triageKey}}
+Content-Type: application/json
+
+{"nombreCompleto":"Ab","edad":150,"frecuenciaCardiaca":300,"presionSistolica":120,"presionDiastolica":130,"spo2":120,"temperatura":36.5,"dolor":11,"gcs":15,"quejaPrincipal":"Prueba"}
+
+### ============================================================ 4. Estados (RF-02)
+
+### Consultar al paciente E1 (usa el id de la respuesta de registrarE1)
+GET {{triage}}/triage/pacientes/{{registrarE1.response.body.$.id}}
+X-API-Key: {{triageKey}}
+
+###
+
+### REGISTRADO -> EN_CONSULTA: 200
+PATCH {{triage}}/triage/pacientes/{{registrarE2.response.body.$.id}}/estado
+X-API-Key: {{triageKey}}
+Content-Type: application/json
+
+{"estado":"EN_CONSULTA"}
+
+###
+
+### EN_CONSULTA -> REGISTRADO: 409 (transicion invalida)
+PATCH {{triage}}/triage/pacientes/{{registrarE2.response.body.$.id}}/estado
+X-API-Key: {{triageKey}}
+Content-Type: application/json
+
+{"estado":"REGISTRADO"}
+
+###
+
+### Alta directa (REGISTRADO -> ALTA)
+PATCH {{triage}}/triage/pacientes/{{registrarE4.response.body.$.id}}/estado
+X-API-Key: {{triageKey}}
+Content-Type: application/json
+
+{"estado":"ALTA"}
+
+### ============================================================ 5. Estado de urgencias en el asistente (RF-04 B, desde Kafka)
+
+GET {{asistente}}/asistente/estado-urgencias
+X-API-Key: {{asistenteKey}}
+
+### ============================================================ 6. Alertas de escalamiento en vivo (RF-06, SSE)
+### Respuesta que no termina: deja la peticion abierta y registra pacientes CRITICO (con SLA corto en local se escalan en segundos).
+
+GET {{triage}}/triage/alertas/stream
+X-API-Key: {{triageKey}}
+Accept: text/event-stream
+
+### ============================================================ 7. Reporte de operacion por hora (RF-05)
+### Rango [desde, hasta) con offset obligatorio. Ajusta las fechas al dia de la prueba.
+
+GET {{triage}}/triage/reportes/operacion?desde=2026-11-05T00:00:00-05:00&hasta=2026-11-06T00:00:00-05:00
+X-API-Key: {{triageKey}}
+
+### ============================================================ 8. Asistente clinico (RF-04 A, RAG con cita obligatoria)
+
+### Con protocolo (PROTO-001)
+POST {{asistente}}/asistente/consulta
+X-API-Key: {{asistenteKey}}
+Content-Type: application/json
+
+{"pregunta":"Cuales son las medidas iniciales ante una crisis hipertensiva?"}
+
+###
+
+### Con protocolo (PROTO-002)
+POST {{asistente}}/asistente/consulta
+X-API-Key: {{asistenteKey}}
+Content-Type: application/json
+
+{"pregunta":"Cuando se administra el primer antibiotico en sepsis?"}
+
+###
+
+### Sin protocolo: aviso explicito, fuentes vacias
+POST {{asistente}}/asistente/consulta
+X-API-Key: {{asistenteKey}}
+Content-Type: application/json
+
+{"pregunta":"Cual es el tratamiento de primera linea para la diabetes tipo 2?"}
+
+### ============================================================ 9. Seguridad y observabilidad
+
+### Sin API key: 401 en application/problem+json
+GET {{triage}}/triage/pacientes/00000000-0000-0000-0000-000000000000
+
+###
+
+### Metricas (requieren API key)
+GET {{triage}}/actuator/prometheus
+X-API-Key: {{triageKey}}
+
+###
+
+GET {{asistente}}/actuator/circuitbreakers
+X-API-Key: {{asistenteKey}}
+
+###
+
+### Swagger UI: abrir {{triage}}/swagger-ui.html y {{asistente}}/swagger-ui.html en el navegador (boton Authorize)

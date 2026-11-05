@@ -60,3 +60,6 @@ HELP.md
 
 # --- Despliegue en Azure (infra/): claves generadas y ultimo tag de imagen ---
 infra/.ultimo-tag
+
+# --- Cliente HTTP (IntelliJ / VS Code): las claves reales van en este archivo, nunca versionado ---
+**/http-client.private.env.json

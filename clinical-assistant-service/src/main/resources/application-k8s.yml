@@ -1,0 +1,22 @@
+# Perfil para Kubernetes (AKS): los hosts son los nombres de los Services del namespace (redis, kafka) y todo se
+# parametriza por variables de entorno que inyectan el ConfigMap assistant-config y el Secret vidacruz-secrets.
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+  ai:
+    vectorstore:
+      redis:
+        uri: redis://:${REDIS_PASSWORD}@${REDIS_HOST:redis}:${REDIS_PORT:6379}
+  lifecycle:
+    # Cierre ordenado: debe caber en terminationGracePeriodSeconds del Deployment (menos el preStop).
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:25s}
+
+# En el clúster Swagger UI se enciende o apaga solo con SWAGGER_HABILITADO (por defecto apagado = produccion).
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_HABILITADO:false}
+  swagger-ui:
+    enabled: ${SWAGGER_HABILITADO:false}

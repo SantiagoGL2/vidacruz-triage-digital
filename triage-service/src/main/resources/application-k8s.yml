@@ -1,0 +1,19 @@
+# Perfil para Kubernetes (AKS): los hosts son los nombres de los Services del namespace (postgres, kafka) y todo se
+# parametriza por variables de entorno que inyectan el ConfigMap triage-config y el Secret vidacruz-secrets.
+spring:
+  r2dbc:
+    url: r2dbc:postgresql://${DB_HOST:postgres}:${DB_PORT:5432}/${DB_NAME:triage}
+  flyway:
+    url: jdbc:postgresql://${DB_HOST:postgres}:${DB_PORT:5432}/${DB_NAME:triage}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
+  lifecycle:
+    # Cierre ordenado: debe caber en terminationGracePeriodSeconds del Deployment (menos el preStop).
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:25s}
+
+# En el clúster Swagger UI se enciende o apaga solo con SWAGGER_HABILITADO (por defecto apagado = produccion).
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_HABILITADO:false}
+  swagger-ui:
+    enabled: ${SWAGGER_HABILITADO:false}

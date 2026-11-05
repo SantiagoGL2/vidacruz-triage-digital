@@ -1,0 +1,61 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Overlay de Azure (AKS, un nodo Standard_B4ms). Los marcadores en MAYUSCULAS los sustituye infra/deploy.* al renderizar:
+#   ACR_LOGIN_SERVER   <acr>.azurecr.io           IMAGE_TAG   hash corto de git
+#   DNS_LABEL_TRIAGE / DNS_LABEL_ASISTENTE        etiquetas DNS -> <etiqueta>.eastus.cloudapp.azure.com
+# Se hace asi para no versionar nombres propios de la suscripcion.
+resources:
+  - ../../base
+
+# Todas las imagenes salen del ACR (las de terceros se copian con "az acr import": sin limites de Docker Hub).
+images:
+  - name: vidacruz/triage-service
+    newName: ACR_LOGIN_SERVER/triage-service
+    newTag: IMAGE_TAG
+  - name: vidacruz/clinical-assistant-service
+    newName: ACR_LOGIN_SERVER/clinical-assistant-service
+    newTag: IMAGE_TAG
+  - name: postgres
+    newName: ACR_LOGIN_SERVER/postgres
+  - name: apache/kafka
+    newName: ACR_LOGIN_SERVER/kafka
+  - name: redis/redis-stack-server
+    newName: ACR_LOGIN_SERVER/redis-stack-server
+  - name: busybox
+    newName: ACR_LOGIN_SERVER/busybox
+
+# Un solo nodo: una replica de cada servicio (no hay cuota para mas). Los recursos de la base ya estan dimensionados para
+# el B4ms (reparto en docs/despliegue-azure.md).
+replicas:
+  - name: triage-service
+    count: 1
+  - name: clinical-assistant-service
+    count: 1
+
+patches:
+  - target:
+      kind: Service
+      name: triage-service
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: LoadBalancer
+      - op: add
+        path: /metadata/annotations
+        value:
+          service.beta.kubernetes.io/azure-dns-label-name: DNS_LABEL_TRIAGE
+          # La sonda del balanceador pregunta por la readiness (publica); "/" respondería 401 y lo daria por caido.
+          service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /actuator/health/readiness
+  - target:
+      kind: Service
+      name: clinical-assistant-service
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: LoadBalancer
+      - op: add
+        path: /metadata/annotations
+        value:
+          service.beta.kubernetes.io/azure-dns-label-name: DNS_LABEL_ASISTENTE
+          service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /actuator/health/readiness

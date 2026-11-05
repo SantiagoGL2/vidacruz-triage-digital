@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vidacruz
+  labels:
+    # Pod Security Standards: "restricted" para los servicios; las bases de datos relajan solo lo imprescindible.
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted

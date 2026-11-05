@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Plataforma completa en el namespace "vidacruz". Los Secrets NO estan aqui: los crea el script de despliegue
+# (infra/deploy.*) desde variables de entorno; la forma esta en k8s/secret.example.yaml.
+namespace: vidacruz
+
+resources:
+  - namespace.yaml
+  - configmaps.yaml
+  - postgres.yaml
+  - kafka.yaml
+  - kafka-topics-job.yaml
+  - redis-stack.yaml
+  - triage-service.yaml
+  - clinical-assistant-service.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: vidacruz-triage
+    includeSelectors: false

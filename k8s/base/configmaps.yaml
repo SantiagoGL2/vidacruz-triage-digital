@@ -1,0 +1,46 @@
+# Configuracion NO sensible. Las claves salen de docker-compose.yml / application*.yml (mismos nombres de variable).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: triage-config
+data:
+  SPRING_PROFILES_ACTIVE: k8s
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_NAME: triage
+  DB_USER: triage
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  # RN-02: SLA por nivel (minutos). El SLA se congela en el paciente al registrarlo.
+  TRIAGE_SLA_CRITICO: "5"
+  TRIAGE_SLA_URGENTE: "10"
+  TRIAGE_SLA_URGENTE_2: "30"
+  TRIAGE_SLA_NO_URGENTE: "60"
+  TRIAGE_SLA_NO_URGENTE_2: "120"
+  TRIAGE_SLA_INTERVALO_EVALUACION: PT30S
+  TRIAGE_ALERTAS_WEBHOOK_URL: ""
+  TRIAGE_REPORTES_ZONA: America/Bogota
+  TRIAGE_REPORTES_RANGO_MAXIMO_DIAS: "31"
+  # Swagger UI publica para la demo (en produccion real: "false", ver ADR 0007/0008).
+  SWAGGER_HABILITADO: "true"
+  OTEL_EXPORT_ENABLED: "false"
+  # Cierre ordenado: debe ser menor que terminationGracePeriodSeconds (menos el preStop).
+  SHUTDOWN_TIMEOUT: 25s
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: assistant-config
+data:
+  SPRING_PROFILES_ACTIVE: k8s
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  LLM_BASE_URL: https://api.openai.com
+  LLM_CHAT_MODEL: gpt-4o-mini
+  LLM_EMBEDDING_MODEL: text-embedding-3-small
+  # RAG: umbral medido con text-embedding-3-small (docs/asistente-rag.md). Si cambias de modelo, recalibra.
+  ASSISTANT_RAG_TOP_K: "4"
+  ASSISTANT_RAG_SIMILARITY_THRESHOLD: "0.75"
+  SWAGGER_HABILITADO: "true"
+  OTEL_EXPORT_ENABLED: "false"
+  SHUTDOWN_TIMEOUT: 25s

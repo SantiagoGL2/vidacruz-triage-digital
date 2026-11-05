@@ -29,6 +29,17 @@ class ArquitecturaTests {
 			.whereLayer("Application").mayOnlyBeAccessedByLayers("Infrastructure")
 			.whereLayer("Domain").mayOnlyBeAccessedByLayers("Application", "Infrastructure");
 
+	// ------------------------------------------------------------------ independencia del asistente
+
+	/**
+	 * El triaje nunca depende del asistente (enunciado): ninguna clase de triage-service referencia al asistente. Se
+	 * integran solo por el topic de Kafka (docs/eventos.md). Pareja de la regla del asistente («no llama a triage»).
+	 */
+	@ArchTest
+	static final ArchRule triageNoDependeDelAsistente = noClasses().that().resideInAPackage("com.vidacruz.triage..")
+			.should().dependOnClassesThat().resideInAnyPackage("com.vidacruz.assistant..")
+			.as("triage-service no puede depender de clinical-assistant-service (solo se integran por Kafka)");
+
 	// ------------------------------------------------------------------ domain
 
 	@ArchTest

@@ -58,6 +58,27 @@ Flujo, prompt, umbral y resiliencia: [`docs/asistente-rag.md`](docs/asistente-ra
 * **Modo degradado:** si el proveedor no responde, `503` con «El asistente clínico no está disponible temporalmente; consulte los protocolos impresos». El resto del servicio
   (`/asistente/estado-urgencias`) y la readiness no se ven afectados.
 
+## Seguridad
+
+Los dos servicios se protegen con una **API key por servicio** en el header `X-API-Key` (decisión y límites en [ADR 0007](docs/adr/0007-autenticacion-por-api-key.md)). La clave sale de variables de entorno (`TRIAGE_API_KEY`, `ASSISTANT_API_KEY`; ver `.env.example`), nunca está en el código ni tiene valor por defecto.
+
+* **Públicas:** solo `/actuator/health/**` y la documentación OpenAPI (`/v3/api-docs`, `/swagger-ui.html`; se apaga con `SWAGGER_HABILITADO=false`). Todo lo demás exige la clave.
+* **Con `curl`:**
+
+  ```bash
+  # triage (puerto 8081 con docker compose)
+  curl -H "X-API-Key: $TRIAGE_API_KEY" http://localhost:8081/triage/pacientes/<id>
+
+  # asistente (puerto 8082)
+  curl -H "X-API-Key: $ASSISTANT_API_KEY" http://localhost:8082/asistente/estado-urgencias
+
+  # sin clave o con una incorrecta: 401 application/problem+json
+  curl -i http://localhost:8081/triage/pacientes/<id>
+  ```
+
+* **Con Swagger UI:** abre `/swagger-ui.html` del servicio, pulsa **Authorize**, pega el valor de `TRIAGE_API_KEY` (o `ASSISTANT_API_KEY`) y confirma; las pruebas desde la página ya llevan el header.
+* **Límites:** la clave identifica a la aplicación, no a la persona (la auditoría no registra usuario), no hay roles y la rotación es manual. En producción se propone Entra ID con roles por perfil clínico y claves en Azure Key Vault (ver el ADR).
+
 ## Documentación
 
 * [`docs/enunciado.md`](docs/enunciado.md) — requerimientos y reglas de negocio.

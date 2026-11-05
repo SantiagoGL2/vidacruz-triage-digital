@@ -8,8 +8,8 @@ excluye. Se generan con `./gradlew test` (HTML en `build/reports/jacoco/test/ind
 
 | Servicio | Tests | Líneas | Ramas | Umbral (líneas / ramas) |
 |---|---:|---|---|---|
-| `triage-service` | 303 | **96.8 % (953/984)** | **81.1 % (223/275)** | ≥ 92 % / ≥ 76 % |
-| `clinical-assistant-service` | 175 (3 omitidos) | **95.5 % (939/983)** | **78.1 % (282/361)** | ≥ 91 % / ≥ 73 % |
+| `triage-service` | 306 | **96.8 % (953/984)** | **81.1 % (223/275)** | ≥ 92 % / ≥ 76 % |
+| `clinical-assistant-service` | 176 (3 omitidos) | **95.5 % (976/1022)** | **78.0 % (291/373)** | ≥ 91 % / ≥ 73 % |
 
 El umbral está **unos puntos por debajo del valor actual** (margen para cambios pequeños sin que el build falle por ruido),
 pero lo bastante cerca como para que una bajada real de cobertura rompa `check`. Al mejorar la cobertura, se sube el umbral en el
@@ -33,7 +33,7 @@ pero lo bastante cerca como para que una bajada real de cobertura rompa `check`.
 |---|---|---|
 | domain | 96.9 % (280/289) | 87.7 % (121/138) |
 | application | 97.1 % (134/138) | 87.1 % (27/31) |
-| infrastructure · entrypoint (web, kafka, scheduler, health) | 89.7 % (157/175) | 65.0 % (39/60) |
+| infrastructure · entrypoint (web, kafka, scheduler, health) | 90.7 % (194/214) | 66.7 % (48/72) |
 | infrastructure · drivenadapter (postgres, kafka, redis, ai…) | 96.5 % (306/317) | 71.4 % (90/126) |
 | infrastructure · config (seguridad y arranque) | 96.9 % (62/64) | 83.3 % (5/6) |
 

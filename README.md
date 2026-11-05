@@ -1,6 +1,6 @@
 # VidaCruz Triage Digital
 
-![Java 21](https://img.shields.io/badge/Java-21-orange) ![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F) ![WebFlux](https://img.shields.io/badge/Spring-WebFlux%20%2B%20R2DBC-6DB33F) ![Kafka](https://img.shields.io/badge/Kafka-KRaft-231F20) ![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-336791) ![Redis Stack](https://img.shields.io/badge/Redis-Stack-DC382D) ![Azure AKS](https://img.shields.io/badge/Azure-AKS-0078D4) [![CI](https://github.com/SantiagoGL2/vidacruz-triage-digital/actions/workflows/ci.yml/badge.svg)](https://github.com/SantiagoGL2/vidacruz-triage-digital/actions/workflows/ci.yml) ![Tests](https://img.shields.io/badge/tests-478-brightgreen) ![Cobertura de lineas](https://img.shields.io/badge/cobertura%20(lineas)-96%25-brightgreen)
+![Java 21](https://img.shields.io/badge/Java-21-orange) ![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F) ![WebFlux](https://img.shields.io/badge/Spring-WebFlux%20%2B%20R2DBC-6DB33F) ![Kafka](https://img.shields.io/badge/Kafka-KRaft-231F20) ![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-336791) ![Redis Stack](https://img.shields.io/badge/Redis-Stack-DC382D) ![Azure AKS](https://img.shields.io/badge/Azure-AKS-0078D4) [![CI](https://github.com/SantiagoGL2/vidacruz-triage-digital/actions/workflows/ci.yml/badge.svg)](https://github.com/SantiagoGL2/vidacruz-triage-digital/actions/workflows/ci.yml) ![Tests](https://img.shields.io/badge/tests-482-brightgreen) ![Cobertura de lineas](https://img.shields.io/badge/cobertura%20(lineas)-95%25-brightgreen)
 
 Sistema de triaje digital para las urgencias de VidaCruz, hecho con dos microservicios reactivos (Spring WebFlux, R2DBC, Kafka):
 
@@ -17,16 +17,16 @@ Sistema de triaje digital para las urgencias de VidaCruz, hecho con dos microser
 
 | Servicio | URL pública | Swagger UI |
 |---|---|---|
-| `triage-service` | <http://vidacruz-triage-lxwjvy.eastus.cloudapp.azure.com> | [/swagger-ui.html](http://vidacruz-triage-lxwjvy.eastus.cloudapp.azure.com/swagger-ui.html) |
-| `clinical-assistant-service` | <http://vidacruz-asistente-lxwjvy.eastus.cloudapp.azure.com> | [/swagger-ui.html](http://vidacruz-asistente-lxwjvy.eastus.cloudapp.azure.com/swagger-ui.html) |
+| `triage-service` | <https://vidacruz-triage-lxwjvy.eastus.cloudapp.azure.com> | [/swagger-ui.html](https://vidacruz-triage-lxwjvy.eastus.cloudapp.azure.com/swagger-ui.html) |
+| `clinical-assistant-service` | <https://vidacruz-asistente-lxwjvy.eastus.cloudapp.azure.com> | [/swagger-ui.html](https://vidacruz-asistente-lxwjvy.eastus.cloudapp.azure.com/swagger-ui.html) |
 
-* Es un entorno de **prueba**, en HTTP y temporal (se destruye con `infra/destroy.*`, ver [sección 11](#11-despliegue-en-azure)). `GET /actuator/health/**` y Swagger son públicos; **todo lo demás exige `X-API-Key`**.
+* Es un entorno de **prueba**, con **HTTPS** (certificado de Let's Encrypt; HTTP redirige a HTTPS) y temporal (se destruye con `infra/destroy.*`, ver [sección 11](#11-despliegue-en-azure)). `GET /actuator/health/**` y Swagger son públicos; **todo lo demás exige `X-API-Key`**.
 * **Las API keys se entregan por separado** (no están en el repositorio). En Swagger UI: **Authorize** → pegar la clave del servicio.
 * Los ejemplos usan bash (Linux, macOS, WSL o Git Bash; en PowerShell usar `curl.exe`). Los cuerpos van sin tildes a propósito: el `curl` de Windows no siempre las envía en UTF-8.
 
 ```bash
-export TRIAGE=http://vidacruz-triage-lxwjvy.eastus.cloudapp.azure.com
-export ASISTENTE=http://vidacruz-asistente-lxwjvy.eastus.cloudapp.azure.com
+export TRIAGE=https://vidacruz-triage-lxwjvy.eastus.cloudapp.azure.com
+export ASISTENTE=https://vidacruz-asistente-lxwjvy.eastus.cloudapp.azure.com
 export TRIAGE_API_KEY=<clave de triage entregada por separado>
 export ASSISTANT_API_KEY=<clave del asistente entregada por separado>
 ```
@@ -76,6 +76,8 @@ curl -s -X POST "$ASISTENTE/asistente/consulta" -H "X-API-Key: $ASSISTANT_API_KE
 # {"respuesta":"No existe un protocolo disponible en el corpus oficial para responder esta pregunta.","fuentes":[]}
 ```
 
+**¿Prefieres un recorrido automático?** [`scripts/demo.ps1`](scripts/demo.ps1) / [`scripts/demo.sh`](scripts/demo.sh) ejecutan todo el flujo (E1-E6, validación, transiciones, estado de urgencias, reporte y las 3 consultas) con OK/FALLO por paso: ver [«Demo de punta a punta»](#demo-de-punta-a-punta).
+
 Más pruebas: la sepsis (`"Cuando se administra el primer antibiotico en sepsis?"` → PROTO-002), el `401` sin clave (`curl -i "$TRIAGE/triage/pacientes/$ID"`) y las alertas en vivo (`curl -N "$TRIAGE/triage/alertas/stream" -H "X-API-Key: $TRIAGE_API_KEY"`, SSE).
 
 ---
@@ -110,11 +112,40 @@ El primer arranque tarda un par de minutos (compila las imágenes). Los servicio
 
 Los `curl` de la sección 1 sirven igual cambiando las URLs por `http://localhost:8081` / `http://localhost:8082` y usando tus claves. Para parar y borrar los datos: `docker compose down -v`.
 
+### Demo de punta a punta
+
+Un script recorre el sistema entero y marca cada comprobación con **OK/FALLO** (coloreado, explicando cada paso): 1 salud · 2 registrar
+E1-E6 y comparar el nivel con el esperado del enunciado · 3 validación (`400` con los campos) · 4 transición válida (`200`) e inválida (`409`) ·
+5 estado de urgencias en el asistente antes y después de un alta (consistencia eventual: reintenta unos segundos) · 6 escalamiento por SLA con la
+alerta SSE en vivo · 7 reporte de operación · 8 las 3 consultas de ejemplo (2 con fuentes, 1 sin protocolo) · 9 resumen. Termina con código de
+salida `1` si algo falla. Las URLs y las API keys **no están en el código**: se dan por parámetros, variables de entorno o un archivo `KEY=VALUE`.
+
+```powershell
+# Local (PowerShell). Para ver el escalamiento en segundos, en .env: TRIAGE_SLA_CRITICO=1 y TRIAGE_SLA_INTERVALO_EVALUACION=PT5S
+./scripts/demo.ps1 -ArchivoEnv .env
+
+# Azure por HTTPS (las claves están en infra/.env.azure)
+./scripts/demo.ps1 -ArchivoEnv infra/.env.azure -UrlTriage https://<triage>.eastus.cloudapp.azure.com -UrlAsistente https://<asistente>.eastus.cloudapp.azure.com
+```
+
+```bash
+# Equivalente en bash (>= 4, curl >= 7.55)
+ARCHIVO_ENV=.env ./scripts/demo.sh
+ARCHIVO_ENV=infra/.env.azure TRIAGE_URL=https://<triage>.eastus.cloudapp.azure.com ASISTENTE_URL=https://<asistente>.eastus.cloudapp.azure.com ./scripts/demo.sh
+```
+
+* **Escalamiento (paso 6):** solo se ejecuta si el SLA de CRITICO cabe en la espera máxima (150 s). Con los SLA reales (5 min, p. ej. en Azure) el paso se
+  **omite y lo explica**; fuerzalo con `-Escalamiento si` / `ESCALAMIENTO=si`, o apágalo con `no`.
+* Opciones: `-EsperaMaximaEscalamiento` / `ESPERA_MAXIMA_ESCALAMIENTO`; `-NoVerificarCertificado` / `INSEGURO=1` (solo con certificados de prueba de Let's Encrypt).
+* **Cliente HTTP:** [`scripts/requests.http`](scripts/requests.http) trae todas las peticiones (IntelliJ HTTP Client o VS Code con REST Client/httpyac). Las URLs
+  están en [`scripts/http-client.env.json`](scripts/http-client.env.json) (entornos `local` y `azure`) y las claves van en `scripts/http-client.private.env.json`
+  (copia de [`http-client.private.env.example.json`](scripts/http-client.private.env.example.json); está en `.gitignore`).
+
 **Tests** (necesitan Docker en marcha: Testcontainers levanta PostgreSQL, Kafka y Redis):
 
 ```bash
-cd triage-service && ./gradlew check              # 303 tests + cobertura (JaCoCo) con umbral
-cd clinical-assistant-service && ./gradlew check  # 175 tests (3 opcionales con proveedor real) + cobertura
+cd triage-service && ./gradlew check              # 306 tests + cobertura (JaCoCo) con umbral
+cd clinical-assistant-service && ./gradlew check  # 176 tests (3 opcionales con proveedor real) + cobertura
 ./gradlew testAll                                 # desde la raíz: los tests de ambos servicios (sin verificar el umbral)
 ```
 
@@ -314,6 +345,7 @@ Tres barreras en serie; el LLM solo ve fragmentos del corpus oficial (PROTO-001.
 * **Comparación en tiempo constante:** SHA-256 de ambas claves + `MessageDigest.isEqual`, así no se filtra ni la longitud ni el prefijo.
 * **Ninguna credencial en el código:** claves y contraseñas llegan por variables de entorno (`.env` ignorado por git en local; **Kubernetes Secret** en Azure, con valores generados al azar por el script de despliegue y nunca versionados). El repo solo trae `.env.example` y `k8s/secret.example.yaml` sin valores.
 * **Validación de entradas:** JSON estricto (un `72.5` en un entero o un `"72"` en un número es `400`), rangos clínicos en el dominio, límites de longitud, UUID mal formado → `400`. Los errores nunca devuelven stacktrace; los logs no incluyen nombre, edad ni queja del paciente.
+* **Límite de consultas al asistente:** `POST /asistente/consulta` admite 20 consultas por minuto por API key (Resilience4j `RateLimiter`, configurable con `ASSISTANT_RATE_LIMIT_*`); al superarlo, `429` con `Retry-After` en el formato de error común. Cada consulta cuesta una llamada al proveedor de IA: el límite acota el daño de un bucle defectuoso o de una clave filtrada ([justificación](docs/asistente-rag.md#límite-de-consultas-rate-limiting)).
 * **Contenedores:** usuario no root, `readOnlyRootFilesystem` en los servicios, `capabilities: drop ALL`, `seccomp RuntimeDefault`.
 
 **Con curl:** `curl -H "X-API-Key: $TRIAGE_API_KEY" http://localhost:8081/triage/pacientes/<id>`. **Con Swagger UI:** abrir `/swagger-ui.html` → **Authorize** → pegar la clave del servicio → *Authorize*; las pruebas desde la página llevan el header.
@@ -336,6 +368,7 @@ Tres barreras en serie; el LLM solo ve fragmentos del corpus oficial (PROTO-001.
 | `triage_alertas_emitidas_total{canal}` · `_fallos_total{canal}` | alertas por canal (sse, webhook) |
 | `asistente_llm_latencia_seconds{operacion,resultado}` · `asistente_llm_tokens_total{tipo}` | latencia y consumo del proveedor de IA |
 | `asistente_consultas_total{resultado}` · `asistente_citas_descartadas_total` | resultado de las consultas RAG y citas rechazadas por la barrera 3 |
+| `asistente_consultas_limitadas_total` | consultas rechazadas con `429` por el límite por API key |
 | `asistente_eventos_procesados_total{eventType}` · `_duplicados` · `_ignorados` · `_dlt` | proyección de eventos |
 | `asistente_pacientes_activos{nivel}` | vista de urgencias como gauge |
 
@@ -351,7 +384,7 @@ curl -s localhost:8082/actuator/circuitbreakers -H "X-API-Key: $ASSISTANT_API_KE
 
 ## 10. Pruebas
 
-**478 tests** automatizados (303 en triage, 175 en el asistente), todos en verde; 3 de ellos (`ProveedorRealTests`) se omiten sin `LLM_API_KEY` real y validan el RAG contra OpenAI. Usan **Testcontainers** (PostgreSQL, Kafka, Redis), **WireMock** como proveedor LLM simulado y **BlockHound** activo en los tests de integración.
+**482 tests** automatizados (306 en triage, 176 en el asistente), todos en verde; 3 de ellos (`ProveedorRealTests`) se omiten sin `LLM_API_KEY` real y validan el RAG contra OpenAI. Usan **Testcontainers** (PostgreSQL, Kafka, Redis), **WireMock** como proveedor LLM simulado y **BlockHound** activo en los tests de integración.
 
 | Qué cubren | Tests (clases principales) |
 |---|---|
@@ -375,7 +408,7 @@ Ejecución: ver [sección 2](#2-ejecutar-en-local-con-un-solo-comando) (`./gradl
 | Servicio | Líneas | Ramas | Umbral (líneas / ramas) | domain (líneas) | application (líneas) |
 |---|---|---|---|---|---|
 | `triage-service` | **96.8 %** | **81.1 %** | ≥ 92 % / ≥ 76 % | 98.2 % | 95.5 % |
-| `clinical-assistant-service` | **95.5 %** | **78.1 %** | ≥ 91 % / ≥ 73 % | 96.9 % | 97.1 % |
+| `clinical-assistant-service` | **95.5 %** | **78.0 %** | ≥ 91 % / ≥ 73 % | 96.9 % | 97.1 % |
 
 **CI:** [`ci.yml`](.github/workflows/ci.yml) ejecuta `./gradlew check` por servicio en cada push y PR a `main` (Testcontainers en `ubuntu-latest`) y sube los reportes de tests y cobertura como artefactos.
 
@@ -383,10 +416,10 @@ Ejecución: ver [sección 2](#2-ejecutar-en-local-con-un-solo-comando) (`./gradl
 
 ## 11. Despliegue en Azure
 
-Desplegado en **AKS** (un nodo `Standard_D4s_v4`, plan Free) con **ACR Basic**; PostgreSQL, Kafka (KRaft) y Redis Stack corren en el clúster como `StatefulSet` con volumen persistente y solo `ClusterIP`. Cada servicio sale por un `LoadBalancer` con etiqueta DNS. Todo en código: **Bicep** (`infra/`) y **Kustomize** (`k8s/base` + `k8s/overlays/azure`), con sondas `startup`/`liveness`/`readiness`, cierre ordenado y pods endurecidos.
+Desplegado en **AKS** (un nodo `Standard_D4s_v4`, plan Free) con **ACR Basic**; PostgreSQL, Kafka (KRaft) y Redis Stack corren en el clúster como `StatefulSet` con volumen persistente y solo `ClusterIP`. Lo único público es un **Ingress NGINX con HTTPS** (certificados de Let's Encrypt renovados por cert-manager; HTTP redirige a HTTPS): un host por servicio, con la misma IP y etiqueta DNS que antes tenían los `LoadBalancer`, y sin costo extra ([ADR 0009](docs/adr/0009-https-con-ingress-nginx-y-cert-manager.md)). Todo en código: **Bicep** (`infra/`) y **Kustomize** (`k8s/base` + `k8s/overlays/azure` + `k8s/platform`), con sondas `startup`/`liveness`/`readiness`, cierre ordenado y pods endurecidos.
 
 ```bash
-./infra/deploy.ps1      # o ./infra/deploy.sh: cuota → infra → imágenes → credenciales → secretos → manifests → verificación
+./infra/deploy.ps1      # o ./infra/deploy.sh: cuota → infra → imágenes → credenciales → secretos → manifests → plataforma (HTTPS) → verificación
 ./infra/destroy.ps1     # borra el grupo de recursos completo
 ```
 
@@ -400,8 +433,10 @@ Coste ≈ **6 USD/día** encendido (≈ 183 USD/mes). Arquitectura, costos, paso
 
 | Limitación | En producción |
 |---|---|
-| **HTTP sin TLS** en las URLs públicas: la API key viaja en claro. | Ingress/Application Gateway con certificado (cert-manager o Azure) y Swagger apagado. |
 | **La API key identifica a la aplicación, no a la persona**; sin roles; la auditoría no guarda el usuario; rotación manual. | Entra ID con roles por perfil clínico, usuario en la auditoría, Key Vault con rotación ([ADR 0007](docs/adr/0007-autenticacion-por-api-key.md)). |
+| **`ingress-nginx` está retirado por la comunidad de Kubernetes** (repositorio archivado en marzo de 2026): la versión usada (1.15.1) funciona pero **no recibirá parches de seguridad**. | Pasar a una implementación de Gateway API (Envoy Gateway, Cilium, Traefik o la de AKS) manteniendo cert-manager ([ADR 0009](docs/adr/0009-https-con-ingress-nginx-y-cert-manager.md)). |
+| **Sin NetworkPolicy**: cualquier pod del clúster puede hablar con cualquier otro (p. ej. con Postgres, Redis o Kafka). El clúster de prueba se creó sin motor de políticas de red y activarlo exige **recrear el clúster**. | Crear el AKS con Azure Network Policy o Cilium y aplicar políticas de denegación por defecto + reglas explícitas (apps → datos, ingreso → apps). |
+| **Sin dashboard de métricas**: las métricas existen en `/actuator/prometheus` pero no hay Prometheus ni Grafana desplegados. | Dashboard de Grafana sobre esas métricas (clasificación por nivel, escalamientos, latencia del LLM, cola del outbox) con alertas, p. ej. con Azure Managed Prometheus y Grafana. |
 | **Datos dentro del clúster, un nodo, una réplica, sin backups ni alta disponibilidad**; borrar el grupo destruye los datos. Una actualización de AKS no cabe en la cuota (necesita un nodo extra). | PostgreSQL Flexible Server, Event Hubs con API Kafka y Azure Managed Redis, con varias réplicas ([ADR 0008](docs/adr/0008-despliegue-en-aks.md)). |
 | **ACR Tasks está bloqueado en la suscripción de prueba**: las imágenes se construyen con Docker local (o en el runner de GitHub con `deploy.yml`, que **todavía no se ha ejecutado**: falta crear la identidad federada). Tampoco se pudo usar `Standard_B4ms` (AKS la rechaza); se usa `Standard_D4s_v4`. | Las imágenes las construye y publica el pipeline de CI con identidad federada. |
 | **Swagger UI y el health detallado están encendidos en Azure** para poder probar; el detalle del índice incluye el mensaje de error del proveedor (visible solo con API key). | `SWAGGER_HABILITADO=false` y detalles de salud restringidos. |

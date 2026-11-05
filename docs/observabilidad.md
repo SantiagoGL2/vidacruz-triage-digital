@@ -39,6 +39,7 @@ docker compose logs triage-service | grep demo-jaeger-1        # todo lo que pas
 | `triage_alertas_emitidas_total{canal}` · `_fallos_total{canal}` | alertas SSE y webhook |
 | `asistente_llm_latencia_seconds{operacion,resultado}` · `asistente_llm_tokens_total{tipo}` | latencia y consumo del proveedor de IA |
 | `asistente_consultas_total{resultado}` · `asistente_citas_descartadas_total` | consultas RAG y citas rechazadas por la barrera 3 |
+| `asistente_consultas_limitadas_total` | consultas rechazadas con `429` por superar el límite por API key |
 | `asistente_eventos_procesados_total{eventType}` · `_duplicados` · `_ignorados` · `_dlt` | proyección de eventos |
 | `asistente_pacientes_activos{nivel}` | vista de urgencias como gauge |
 

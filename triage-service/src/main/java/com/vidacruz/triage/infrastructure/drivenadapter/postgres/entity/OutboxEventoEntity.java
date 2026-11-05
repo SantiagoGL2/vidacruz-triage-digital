@@ -49,4 +49,8 @@ public class OutboxEventoEntity {
 	@Column("ultimo_error")
 	private String ultimoError;
 
+	/** W3C traceparent de la peticion que origino el evento (V4). */
+	@Column("traceparent")
+	private String traceparent;
+
 }

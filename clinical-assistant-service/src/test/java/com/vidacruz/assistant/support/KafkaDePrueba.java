@@ -49,6 +49,22 @@ public final class KafkaDePrueba {
 		}
 	}
 
+	/** Publica un evento con cabeceras adicionales (p. ej. {@code traceparent}, como hace el outbox de triage). */
+	public static void publicar(EventosTriaje.Evento evento, Map<String, String> cabeceras) {
+		Map<String, Object> props = Map.of(
+				ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap(),
+				ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class,
+				ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+		try (var productor = new KafkaProducer<String, String>(props)) {
+			var registro = new ProducerRecord<>(Contenedores.TOPIC, evento.pacienteId().toString(), evento.json());
+			cabeceras.forEach((k, v) -> registro.headers().add(new RecordHeader(k, v.getBytes(StandardCharsets.UTF_8))));
+			productor.send(registro).get(10, TimeUnit.SECONDS);
+		}
+		catch (Exception e) {
+			throw new IllegalStateException("No se pudo publicar en Kafka", e);
+		}
+	}
+
 	public static void publicar(EventosTriaje.Evento evento) {
 		publicar(evento.pacienteId().toString(), evento.json(), null);
 	}

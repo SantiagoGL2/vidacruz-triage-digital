@@ -4,6 +4,7 @@ import com.vidacruz.triage.domain.event.EventoPendiente;
 import com.vidacruz.triage.domain.event.EventoTriaje;
 import com.vidacruz.triage.domain.model.PoliticaReintentoOutbox;
 import com.vidacruz.triage.domain.port.out.OutboxRepositoryPort;
+import com.vidacruz.triage.infrastructure.drivenadapter.observability.ContextoTraza;
 import com.vidacruz.triage.infrastructure.drivenadapter.postgres.mapper.OutboxEventoMapper;
 import com.vidacruz.triage.infrastructure.drivenadapter.postgres.repository.OutboxEventoRepository;
 import java.time.Instant;
@@ -25,16 +26,24 @@ class OutboxR2dbcAdapter implements OutboxRepositoryPort {
 	private final R2dbcEntityTemplate template;
 	private final OutboxEventoRepository repositorio;
 	private final OutboxEventoMapper mapper;
+	private final ContextoTraza traza;
 
-	OutboxR2dbcAdapter(R2dbcEntityTemplate template, OutboxEventoRepository repositorio, OutboxEventoMapper mapper) {
+	OutboxR2dbcAdapter(R2dbcEntityTemplate template, OutboxEventoRepository repositorio, OutboxEventoMapper mapper,
+			ContextoTraza traza) {
 		this.template = template;
 		this.repositorio = repositorio;
 		this.mapper = mapper;
+		this.traza = traza;
 	}
 
 	@Override
 	public Mono<Void> guardar(EventoTriaje evento) {
-		return Mono.fromSupplier(() -> mapper.aEntidad(evento)).flatMap(template::insert).then();
+		// deferContextual: el traceparent se toma al suscribirse, del contexto de Reactor de la peticion (o el ciclo) en curso.
+		return Mono.deferContextual(contexto -> {
+			var entidad = mapper.aEntidad(evento);
+			entidad.setTraceparent(traza.capturar(contexto));
+			return template.insert(entidad);
+		}).then();
 	}
 
 	@Override
@@ -42,7 +51,7 @@ class OutboxR2dbcAdapter implements OutboxRepositoryPort {
 		return repositorio.reservarPendientes(politica.maxIntentos(), politica.backoffInicial().toMillis(),
 						politica.backoffMaximo().toMillis(), ahora, limite)
 				.map(p -> new EventoPendiente(p.id(), p.aggregateId(), p.eventType(), p.payload(), p.correlationId(),
-						p.intentos()));
+						p.intentos(), p.traceparent()));
 	}
 
 	@Override

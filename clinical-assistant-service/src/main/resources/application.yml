@@ -51,6 +51,7 @@ spring:
     listener:
       ack-mode: record     # el offset se confirma por registro, solo despues de que Redis termino (ver EventosTriajeKafkaListener)
       concurrency: ${ASSISTANT_KAFKA_CONCURRENCY:1}
+      observation-enabled: true   # el consumo continua la traza (traceparent) que trae el mensaje; sus comandos Redis cuelgan de ella
     producer:   # solo para publicar a la DLT; los serializadores se fijan en KafkaConsumerConfig
       acks: all
       properties:

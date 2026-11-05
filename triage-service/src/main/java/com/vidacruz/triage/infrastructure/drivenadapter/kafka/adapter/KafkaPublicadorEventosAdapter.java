@@ -5,6 +5,7 @@ import com.vidacruz.triage.domain.port.out.PublicadorEventosPort;
 import com.vidacruz.triage.infrastructure.config.TriageKafkaProperties;
 import com.vidacruz.triage.infrastructure.config.TriageOutboxProperties;
 import com.vidacruz.triage.infrastructure.drivenadapter.kafka.CabecerasKafka;
+import com.vidacruz.triage.infrastructure.drivenadapter.observability.ContextoTraza;
 import java.nio.charset.StandardCharsets;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -17,6 +18,10 @@ import reactor.core.scheduler.Schedulers;
  * guardado en el outbox y headers eventId / eventType / correlationId. El producer es idempotente con acks=all
  * (application.yml). {@code KafkaTemplate.send} puede bloquear (metadata, buffer), por eso se invoca en
  * boundedElastic y se envuelve con {@code Mono.fromFuture}.
+ * <p>
+ * Traza distribuida: el envio se hace dentro de un span hijo del {@code traceparent} guardado en el outbox, y la
+ * observacion del {@code KafkaTemplate} (spring.kafka.template.observation-enabled) inyecta su propio
+ * {@code traceparent} en la cabecera del mensaje para que el consumidor continue la misma traza.
  */
 @Component
 class KafkaPublicadorEventosAdapter implements PublicadorEventosPort {
@@ -24,17 +29,20 @@ class KafkaPublicadorEventosAdapter implements PublicadorEventosPort {
 	private final KafkaTemplate<String, String> kafkaTemplate;
 	private final TriageKafkaProperties kafka;
 	private final TriageOutboxProperties outbox;
+	private final ContextoTraza traza;
 
 	KafkaPublicadorEventosAdapter(KafkaTemplate<String, String> kafkaTemplate, TriageKafkaProperties kafka,
-			TriageOutboxProperties outbox) {
+			TriageOutboxProperties outbox, ContextoTraza traza) {
 		this.kafkaTemplate = kafkaTemplate;
 		this.kafka = kafka;
 		this.outbox = outbox;
+		this.traza = traza;
 	}
 
 	@Override
 	public Mono<Void> publicar(EventoPendiente evento) {
-		return Mono.fromFuture(() -> kafkaTemplate.send(registro(evento)))
+		return Mono.fromFuture(() -> traza.enContexto(evento.traceparent(), "outbox publicar",
+						() -> kafkaTemplate.send(registro(evento))))
 				.subscribeOn(Schedulers.boundedElastic())
 				.timeout(outbox.timeoutPublicacion())
 				.then();

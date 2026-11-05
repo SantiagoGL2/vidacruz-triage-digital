@@ -1,6 +1,7 @@
 # Levanta toda la plataforma:  cp .env.example .env && docker compose up --build
 # Puertos publicados en el host:
 #   triage-service 8081 | clinical-assistant-service 8082 | postgres 5432 | kafka 29092 | redis 6379 | RedisInsight 8001
+#   (perfil opcional "observabilidad": Jaeger UI 16686 y OTLP 4318)
 name: vidacruz
 
 services:
@@ -103,7 +104,8 @@ services:
       TRIAGE_REPORTES_ZONA: ${TRIAGE_REPORTES_ZONA:-America/Bogota}
       TRIAGE_REPORTES_RANGO_MAXIMO_DIAS: ${TRIAGE_REPORTES_RANGO_MAXIMO_DIAS:-31}
       OTEL_EXPORT_ENABLED: ${OTEL_EXPORT_ENABLED:-false}
-      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://localhost:4318/v1/traces}
+      # Dentro de la red de compose Jaeger es "jaeger" (no se toma de .env: alli apunta a localhost para bootRun en el host)
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
     ports:
       - "8081:8080"
     depends_on:
@@ -137,7 +139,8 @@ services:
       ASSISTANT_RAG_TOP_K: ${ASSISTANT_RAG_TOP_K:-4}
       ASSISTANT_RAG_SIMILARITY_THRESHOLD: ${ASSISTANT_RAG_SIMILARITY_THRESHOLD:-0.75}
       OTEL_EXPORT_ENABLED: ${OTEL_EXPORT_ENABLED:-false}
-      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://localhost:4318/v1/traces}
+      # Dentro de la red de compose Jaeger es "jaeger" (no se toma de .env: alli apunta a localhost para bootRun en el host)
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
     ports:
       - "8082:8080"
     depends_on:
@@ -153,6 +156,19 @@ services:
       timeout: 5s
       retries: 10
       start_period: 40s
+
+  # Trazas distribuidas (opcional): docker compose --profile observabilidad up   (UI en http://localhost:16686)
+  # Para que los servicios envien trazas hay que activar la exportacion: OTEL_EXPORT_ENABLED=true (ver docs/observabilidad.md).
+  # Solo en memoria: al reiniciar se pierden las trazas.
+  jaeger:
+    image: jaegertracing/all-in-one:1.65.0
+    profiles: ["observabilidad"]
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      MEMORY_MAX_TRACES: "5000"
+    ports:
+      - "16686:16686"   # UI
+      - "4318:4318"     # OTLP/HTTP (tambien para ./gradlew bootRun desde el host)
 
 volumes:
   postgres-data:

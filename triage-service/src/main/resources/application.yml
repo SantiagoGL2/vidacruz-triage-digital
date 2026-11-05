@@ -48,8 +48,11 @@ spring:
         delivery.timeout.ms: ${KAFKA_DELIVERY_TIMEOUT_MS:10000}
         request.timeout.ms: ${KAFKA_REQUEST_TIMEOUT_MS:5000}
         max.block.ms: ${KAFKA_MAX_BLOCK_MS:5000}
+    template:
+      observation-enabled: true   # span de publicacion + cabecera traceparent en cada mensaje (traza distribuida)
     listener:
       ack-mode: record     # el offset se confirma por registro, solo cuando el procesamiento termino (ADR 0004)
+      observation-enabled: true   # el consumo continua la traza que trae el mensaje
     consumer:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer

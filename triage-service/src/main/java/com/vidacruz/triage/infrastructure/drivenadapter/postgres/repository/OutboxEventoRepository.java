@@ -26,7 +26,7 @@ public interface OutboxEventoRepository extends R2dbcRepository<OutboxEventoEnti
 	 */
 	@Query("""
 			SELECT o.id, o.aggregate_id, o.event_type, CAST(o.payload AS text) AS payload,
-			       o.payload ->> 'correlationId' AS correlation_id, o.intentos
+			       o.payload ->> 'correlationId' AS correlation_id, o.intentos, o.traceparent
 			  FROM outbox_eventos o
 			 WHERE o.published_at IS NULL
 			   AND o.intentos < :maxIntentos

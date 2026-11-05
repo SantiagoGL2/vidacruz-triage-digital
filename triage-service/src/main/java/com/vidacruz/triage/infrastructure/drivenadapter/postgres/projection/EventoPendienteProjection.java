@@ -9,5 +9,6 @@ public record EventoPendienteProjection(
 		String eventType,
 		String payload,
 		String correlationId,
-		int intentos) {
+		int intentos,
+		String traceparent) {
 }

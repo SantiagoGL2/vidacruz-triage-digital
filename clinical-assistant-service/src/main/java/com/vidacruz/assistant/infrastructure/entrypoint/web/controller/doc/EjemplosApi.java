@@ -109,6 +109,21 @@ public final class EjemplosApi {
 			}
 			""";
 
+	public static final String ERROR_429 = """
+			{
+			  "type": \"""" + ErrorApi.URI_BASE + """
+			demasiadas-peticiones",
+			  "title": "Demasiadas peticiones",
+			  "status": 429,
+			  "detail": "Superaste el limite de 20 consultas cada 60 segundos. Reintenta en 60 segundos",
+			  "instance": "/asistente/consulta",
+			  "correlationId": \"""" + CORRELATION_ID + """
+			",
+			  "timestamp": \"""" + FECHA_EJEMPLO + """
+			"
+			}
+			""";
+
 	public static final String ERROR_503_LLM = """
 			{
 			  "type": \"""" + ErrorApi.URI_BASE + """

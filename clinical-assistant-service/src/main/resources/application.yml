@@ -203,6 +203,12 @@ assistant:
   security:
     api-key-header: X-API-Key
     api-key: ${ASSISTANT_API_KEY}
+  # Limite de consultas por API key (RateLimiter de Resilience4j): cada consulta cuesta una llamada al proveedor de IA.
+  # Al superarlo: 429 con Retry-After. Solo afecta a POST /asistente/consulta.
+  rate-limit:
+    habilitado: ${ASSISTANT_RATE_LIMIT_HABILITADO:true}
+    peticiones: ${ASSISTANT_RATE_LIMIT_PETICIONES:20}
+    periodo: ${ASSISTANT_RATE_LIMIT_PERIODO:PT1M}
   # RF-04 parte B: consumo de los eventos de triage (nunca se llama a la API de triage)
   kafka:
     habilitado: ${ASSISTANT_KAFKA_HABILITADO:true}

@@ -40,6 +40,7 @@ Ambos servicios responden los errores con **RFC 7807** (`application/problem+jso
 | `json-malformado` | 400 | El cuerpo no es JSON | |
 | `solicitud-invalida` | 400 | Cuerpo ausente o ilegible | |
 | `no-autenticado` | 401 | Falta `X-API-Key` o es incorrecta | |
+| `demasiadas-peticiones` | 429 | Se superó el límite de consultas por API key (20 por minuto por defecto); cada consulta tiene costo en el proveedor de IA | cabecera `Retry-After` |
 | `asistente-no-disponible` | 503 | El proveedor de IA no responde (RN-05: no se inventa respuesta) | `operacion`, cabecera `Retry-After` |
 | `indice-no-disponible` | 503 | Los protocolos aún se están indexando | `Retry-After` |
 | `estado-no-disponible` | 503 | Redis no responde | `Retry-After` |

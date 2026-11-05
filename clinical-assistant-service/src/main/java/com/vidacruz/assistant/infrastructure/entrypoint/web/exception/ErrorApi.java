@@ -18,6 +18,7 @@ public enum ErrorApi {
 	JSON_MALFORMADO(HttpStatus.BAD_REQUEST, "json-malformado"),
 	SOLICITUD_INVALIDA(HttpStatus.BAD_REQUEST, "solicitud-invalida"),
 	NO_AUTENTICADO(HttpStatus.UNAUTHORIZED, "no-autenticado"),
+	DEMASIADAS_PETICIONES(HttpStatus.TOO_MANY_REQUESTS, "demasiadas-peticiones"),
 	ASISTENTE_NO_DISPONIBLE(HttpStatus.SERVICE_UNAVAILABLE, "asistente-no-disponible"),
 	INDICE_NO_DISPONIBLE(HttpStatus.SERVICE_UNAVAILABLE, "indice-no-disponible"),
 	ESTADO_NO_DISPONIBLE(HttpStatus.SERVICE_UNAVAILABLE, "estado-no-disponible"),

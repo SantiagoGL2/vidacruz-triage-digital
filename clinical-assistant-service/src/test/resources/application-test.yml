@@ -21,6 +21,8 @@ spring:
 assistant:
   security:
     api-key: test-api-key
+  rate-limit:
+    peticiones: 100000      # los tests no deben toparse con el limite; RateLimitTests lo fija bajo en su propio contexto
   kafka:
     # Backoff corto para que "Redis caido y vuelve" se pruebe en segundos
     retry:

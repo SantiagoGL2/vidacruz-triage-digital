@@ -198,6 +198,32 @@ Los reintentos propios de Spring AI se desactivan (`spring.ai.retry.max-attempts
 `"El asistente clínico no está disponible temporalmente; consulte los protocolos impresos"` y `Retry-After`; aplica igual a embeddings y a chat (`"operacion": "chat" | "embedding"`).
 La caída del proveedor **no** afecta a `GET /asistente/estado-urgencias` ni a la readiness (los circuit breakers no están en el grupo de readiness).
 
+## Límite de consultas (rate limiting)
+
+`POST /asistente/consulta` está limitado **por API key** con un `RateLimiter` de Resilience4j (`LimiteConsultasWebFilter`).
+Por defecto **20 consultas por minuto** (`ASSISTANT_RATE_LIMIT_PETICIONES`, `ASSISTANT_RATE_LIMIT_PERIODO`;
+`ASSISTANT_RATE_LIMIT_HABILITADO=false` lo apaga). Al superarlo: `429` en `application/problem+json` (tipo
+`demasiadas-peticiones` del [catálogo de errores](errores.md)) con la cabecera `Retry-After` y la métrica
+`asistente_consultas_limitadas_total`.
+
+**Por qué:** cada consulta cuesta dinero y capacidad. Una pregunta hace una llamada de embeddings y otra de chat al proveedor de
+IA, que se factura por token y tiene sus propios límites. Sin tope, un cliente con un bucle defectuoso (o con la clave
+filtrada) podría agotar la cuota del proveedor, disparar la factura y, de paso, abrir el circuit breaker del LLM para todos los
+demás usuarios del asistente. El límite acota ese daño antes de que llegue al proveedor, sin esperar a que lo detecte el
+circuit breaker.
+
+Decisiones:
+
+* **Por API key**, no por IP: tras el Ingress todas las peticiones llegan con la misma IP de origen, y la clave es la identidad
+  que ya existe (ADR 0007). La clave nunca se usa en claro: el limiter se nombra con un hash.
+* **Después de la autenticación:** una petición sin clave válida recibe `401`, no consume cupo ni recibe `429`.
+* **Solo la consulta:** `GET /asistente/estado-urgencias` (barato, sale de Redis) y la salud no se limitan.
+* **Sin esperar:** `timeoutDuration = 0`, así que un hilo del event loop nunca se bloquea; se rechaza al instante.
+* **`Retry-After` = el periodo completo:** es una cota segura de cuándo se repone el cupo (el limiter repone `peticiones` al
+  inicio de cada periodo).
+* **Por réplica:** el contador vive en memoria de cada instancia. Con N réplicas el límite efectivo es hasta N veces mayor; para
+  un límite global haría falta un contador compartido (Redis) o limitar en el Ingress. Es una protección de costo, no de seguridad.
+
 ## Observabilidad
 
 * `asistente.consultas{resultado=respondida|sin_protocolo|degradado}`, `asistente.citas.descartadas`.
@@ -221,6 +247,7 @@ Prueba opcional contra el proveedor real (se omite sin `LLM_API_KEY`): `LLM_API_
 
 ## Limitaciones conocidas
 
+* El límite de consultas es por réplica y en memoria (ver «Límite de consultas»).
 * El estado de la indexación es por réplica (cada una indexa; la operación es idempotente). Si alguien vacía Redis con el servicio en marcha, el índice no se reconstruye hasta reiniciar.
 * La puntuación del umbral depende del modelo de embeddings y del corpus; al cambiar cualquiera de los dos hay que recalibrar (el hueco medido es de ~0.1 con 8 preguntas y 3 protocolos).
 * El RAG responde solo con lo que está en el corpus: no hay memoria entre preguntas ni preguntas de seguimiento.

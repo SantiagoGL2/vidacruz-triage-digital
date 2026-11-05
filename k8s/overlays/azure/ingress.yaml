@@ -1,0 +1,65 @@
+# HTTPS publico: un Ingress por servicio, cada uno con su host (<etiqueta>.eastus.cloudapp.azure.com) y su certificado de
+# Let's Encrypt (cert-manager lo pide y lo renueva solo por la anotacion cluster-issuer). Las rutas de la API NO cambian:
+# todo el host apunta al servicio. Marcadores que sustituye infra/deploy.*: HOST_TRIAGE, HOST_ASISTENTE, CLUSTER_ISSUER.
+#
+# HTTP -> HTTPS: ingress-nginx redirige (308) todo el trafico HTTP de un host con TLS; el challenge ACME
+# (/.well-known/acme-challenge/) queda exento porque cert-manager crea su propio Ingress con ssl-redirect desactivado.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: triage-service
+  labels:
+    app.kubernetes.io/name: triage-service
+  annotations:
+    cert-manager.io/cluster-issuer: CLUSTER_ISSUER
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # El stream SSE de alertas (GET /triage/alertas/stream) es una respuesta que no termina: sin buffering y con timeouts largos.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - HOST_TRIAGE
+      secretName: triage-tls
+  rules:
+    - host: HOST_TRIAGE
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: triage-service
+                port:
+                  name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: clinical-assistant-service
+  labels:
+    app.kubernetes.io/name: clinical-assistant-service
+  annotations:
+    cert-manager.io/cluster-issuer: CLUSTER_ISSUER
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # La consulta puede tardar (LLM): el TimeLimiter de la aplicacion corta a los 20 s; el proxy espera un poco mas.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - HOST_ASISTENTE
+      secretName: asistente-tls
+  rules:
+    - host: HOST_ASISTENTE
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: clinical-assistant-service
+                port:
+                  name: http

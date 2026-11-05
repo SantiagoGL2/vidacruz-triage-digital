@@ -1,0 +1,35 @@
+# Segundo Service LoadBalancer sobre los MISMOS pods del controlador: otra IP publica y otra etiqueta DNS (host del asistente).
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingress-nginx-controller-asistente
+  namespace: ingress-nginx
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/instance: ingress-nginx
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+  annotations:
+    service.beta.kubernetes.io/azure-dns-label-name: DNS_LABEL_ASISTENTE
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  ipFamilies:
+    - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: http
+      appProtocol: http
+    - name: https
+      port: 443
+      protocol: TCP
+      targetPort: https
+      appProtocol: https
+  selector:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/instance: ingress-nginx
+    app.kubernetes.io/name: ingress-nginx

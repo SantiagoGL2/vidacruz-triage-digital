@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Despliega VidaCruz Triage en Azure (ACR + AKS) por pasos. Equivalente a infra/deploy.ps1. Idempotente.
 #
-#   ./infra/deploy.sh cuota|plan|infra|imagenes|credenciales|secretos|aplicar|verificar|todo
+#   ./infra/deploy.sh cuota|plan|infra|imagenes|credenciales|secretos|aplicar|plataforma|verificar|todo
+#
+# HTTPS: los Services de los microservicios son ClusterIP; lo publico es el Ingress (un host por servicio con certificado de
+# Let's Encrypt). 'plataforma' instala cert-manager + ingress-nginx. EMISOR=prod|staging elige el ClusterIssuer (staging para probar).
 #
 # Variables opcionales: REGION (eastus) PREFIJO (vidacruz) GRUPO (rg-vidacruz-triage) TALLA_NODO (Standard_D4s_v4) NAMESPACE (vidacruz)
 # Secretos: LLM_API_KEY sale del entorno o del .env de la raiz. POSTGRES_PASSWORD, REDIS_PASSWORD, TRIAGE_API_KEY y
@@ -14,6 +17,8 @@ PREFIJO="${PREFIJO:-vidacruz}"
 GRUPO="${GRUPO:-rg-vidacruz-triage}"
 TALLA_NODO="${TALLA_NODO:-Standard_D4s_v4}"
 NAMESPACE="${NAMESPACE:-vidacruz}"
+EMISOR="${EMISOR:-prod}"
+VERSION_CERT_MANAGER="${VERSION_CERT_MANAGER:-v1.21.3}"
 
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RAIZ="$(dirname "$AQUI")"
@@ -38,6 +43,8 @@ salidas() {
   SUFIJO="${ACR: -6}"
   ETIQUETA_TRIAGE="${PREFIJO}-triage-${SUFIJO}"
   ETIQUETA_ASISTENTE="${PREFIJO}-asistente-${SUFIJO}"
+  HOST_TRIAGE="${ETIQUETA_TRIAGE}.${REGION}.cloudapp.azure.com"
+  HOST_ASISTENTE="${ETIQUETA_ASISTENTE}.${REGION}.cloudapp.azure.com"
 }
 
 etiqueta_imagen() {
@@ -169,7 +176,7 @@ paso_aplicar() {
   kubectl -n "$NAMESPACE" delete job kafka-init --ignore-not-found >/dev/null
   kubectl kustomize "$RAIZ/k8s/overlays/azure" \
     | sed -e "s|ACR_LOGIN_SERVER|$ACR_SERVER|g" -e "s|IMAGE_TAG|$tag|g" \
-          -e "s|DNS_LABEL_TRIAGE|$ETIQUETA_TRIAGE|g" -e "s|DNS_LABEL_ASISTENTE|$ETIQUETA_ASISTENTE|g" \
+          -e "s|HOST_TRIAGE|$HOST_TRIAGE|g" -e "s|HOST_ASISTENTE|$HOST_ASISTENTE|g" -e "s|CLUSTER_ISSUER|letsencrypt-$EMISOR|g" \
     | kubectl apply -f -
   escribir "Esperando a que todo este listo"
   local ss d
@@ -179,26 +186,62 @@ paso_aplicar() {
 }
 
 esperar_ip() {
-  local ip i
-  for i in $(seq 1 60); do
-    ip="$(kubectl -n "$NAMESPACE" get svc "$1" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
+  local ip i ns="${2:-$NAMESPACE}"
+  for i in $(seq 1 90); do
+    ip="$(kubectl -n "$ns" get svc "$1" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
     [ -n "$ip" ] && { echo "$ip"; return; }
     sleep 5
   done
-  falla "El Service $1 no obtuvo IP publica a tiempo."
+  falla "El Service $ns/$1 no obtuvo IP publica a tiempo."
+}
+
+paso_plataforma() {
+  salidas
+  escribir "Instalando cert-manager $VERSION_CERT_MANAGER (certificados de Let's Encrypt)"
+  kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/download/$VERSION_CERT_MANAGER/cert-manager.yaml"
+  local d
+  for d in cert-manager cert-manager-cainjector cert-manager-webhook; do
+    kubectl -n cert-manager rollout status "deployment/$d" --timeout=300s
+  done
+
+  escribir "Instalando ingress-nginx (un controlador, dos IP publicas con su etiqueta DNS)"
+  kubectl kustomize "$RAIZ/k8s/platform/ingress-nginx" \
+    | sed -e "s|DNS_LABEL_TRIAGE|$ETIQUETA_TRIAGE|g" -e "s|DNS_LABEL_ASISTENTE|$ETIQUETA_ASISTENTE|g" \
+    | kubectl apply -f -
+  kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=300s
+
+  escribir "Emisores de Let's Encrypt (HTTP-01)"
+  local i
+  for i in $(seq 1 12); do   # el webhook de cert-manager puede tardar unos segundos en aceptarlos
+    kubectl apply -f "$RAIZ/k8s/platform/cert-manager/cluster-issuers.yaml" && break
+    [ "$i" -eq 12 ] && falla "No se pudieron crear los ClusterIssuer"
+    sleep 5
+  done
+
+  escribir "Esperando las IP publicas del controlador (las etiquetas DNS pasan de los antiguos LoadBalancer a estas)"
+  echo "  $HOST_TRIAGE -> $(esperar_ip ingress-nginx-controller ingress-nginx)"
+  echo "  $HOST_ASISTENTE -> $(esperar_ip ingress-nginx-controller-asistente ingress-nginx)"
 }
 
 paso_verificar() {
   salidas
-  escribir "kubectl get pods,svc -n $NAMESPACE"
-  kubectl get pods,svc -n "$NAMESPACE" -o wide
-  local ipt ipa urlt urla u
-  ipt="$(esperar_ip triage-service)"; ipa="$(esperar_ip clinical-assistant-service)"
-  urlt="http://$ETIQUETA_TRIAGE.$REGION.cloudapp.azure.com"; urla="http://$ETIQUETA_ASISTENTE.$REGION.cloudapp.azure.com"
-  echo; echo "triage-service             : $urlt   (IP $ipt)"
-  echo "clinical-assistant-service : $urla   (IP $ipa)"
+  escribir "kubectl get pods,svc,ingress,certificate -n $NAMESPACE"
+  kubectl get pods,svc,ingress,certificate -n "$NAMESPACE" -o wide
+  escribir "kubectl get svc -n ingress-nginx"
+  kubectl get svc -n ingress-nginx
+  escribir "Esperando los certificados (cert-manager + Let's Encrypt, suele tardar menos de un minuto)"
+  if ! kubectl -n "$NAMESPACE" wait --for=condition=Ready certificate/triage-tls certificate/asistente-tls --timeout=420s; then
+    kubectl -n "$NAMESPACE" get certificate,certificaterequest,order,challenge || true
+    falla "Certificados no listos (revisa los challenge: DNS, puerto 80 y limites de Let's Encrypt)."
+  fi
+  local urlt="https://$HOST_TRIAGE" urla="https://$HOST_ASISTENTE" u
+  echo; echo "triage-service             : $urlt"
+  echo "clinical-assistant-service : $urla"
   echo "Swagger UI                 : $urlt/swagger-ui.html  |  $urla/swagger-ui.html"
-  for u in "$urlt" "$urla"; do echo "  $u -> $(curl -s -m 15 "$u/actuator/health/readiness" || echo sin respuesta)"; done
+  for u in "$urlt" "$urla"; do
+    echo "  $u -> $(curl -s -m 20 "$u/actuator/health/readiness" || echo sin respuesta)"
+    echo "    http -> HTTP $(curl -s -o /dev/null -m 20 -w '%{http_code}' "${u/https:/http:}/actuator/health/liveness") (redireccion a https esperada: 301/308)"
+  done
   echo "Las API keys estan en infra/.env.azure (TRIAGE_API_KEY, ASSISTANT_API_KEY)."
 }
 
@@ -210,7 +253,8 @@ case "$PASO" in
   credenciales) paso_credenciales ;;
   secretos) paso_secretos ;;
   aplicar) paso_aplicar ;;
+  plataforma) paso_plataforma ;;
   verificar) paso_verificar ;;
-  todo) paso_cuota; paso_infra; paso_imagenes; paso_credenciales; paso_secretos; paso_aplicar; paso_verificar ;;
+  todo) paso_cuota; paso_infra; paso_imagenes; paso_credenciales; paso_secretos; paso_aplicar; paso_plataforma; paso_verificar ;;
   *) falla "Paso desconocido: $PASO (cuota|plan|infra|imagenes|credenciales|secretos|aplicar|verificar|todo)" ;;
 esac

@@ -1,5 +1,10 @@
 # Perfil para Kubernetes (AKS): los hosts son los nombres de los Services del namespace (redis, kafka) y todo se
 # parametriza por variables de entorno que inyectan el ConfigMap assistant-config y el Secret vidacruz-secrets.
+# Detras del Ingress que termina el TLS: se confia en X-Forwarded-Proto/Host (solo el Ingress llega a los pods, los Services son
+# ClusterIP). Sin esto Swagger UI y el contrato OpenAPI anunciarian http:// y el navegador bloquearia "Try it out" por contenido mixto.
+server:
+  forward-headers-strategy: framework
+
 spring:
   data:
     redis:

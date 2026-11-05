@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Controlador de ingreso (ingress-nginx v1.15.1, manifiesto oficial vendorizado en ingress-nginx.yaml) + SEGUNDO Service con
+# su propia IP publica. Se aplica ANTES de los Ingress de k8s/overlays/azure (infra/deploy.* -Paso plataforma).
+#
+# Por que dos Services: Azure da UNA etiqueta DNS (<etiqueta>.eastus.cloudapp.azure.com) por IP publica, y triage y el
+# asistente sirven /swagger-ui.html, /v3/api-docs y /actuator/health en la raiz: no pueden compartir host. Un unico controlador
+# con dos Services LoadBalancer (mismos pods, dos IPs) da un host por servicio y no cuesta mas que los dos LoadBalancer que
+# tenian antes los Deployments. El controlador elige el backend por el Host de la peticion.
+#
+# Marcadores que sustituye infra/deploy.*: DNS_LABEL_TRIAGE, DNS_LABEL_ASISTENTE.
+resources:
+  - ingress-nginx.yaml
+  - servicio-asistente.yaml
+
+patches:
+  - target:
+      kind: Service
+      name: ingress-nginx-controller
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          service.beta.kubernetes.io/azure-dns-label-name: DNS_LABEL_TRIAGE
+          # Sin esto la sonda del balanceador pide "/" (404 en ingress-nginx) y daria el nodo por caido.
+          service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz

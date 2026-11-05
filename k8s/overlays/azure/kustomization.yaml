@@ -1,12 +1,21 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# Overlay de Azure (AKS, un nodo Standard_B4ms). Los marcadores en MAYUSCULAS los sustituye infra/deploy.* al renderizar:
+# Overlay de Azure (AKS, un nodo). Los marcadores en MAYUSCULAS los sustituye infra/deploy.* al renderizar:
 #   ACR_LOGIN_SERVER   <acr>.azurecr.io           IMAGE_TAG   hash corto de git
-#   DNS_LABEL_TRIAGE / DNS_LABEL_ASISTENTE        etiquetas DNS -> <etiqueta>.eastus.cloudapp.azure.com
+#   HOST_TRIAGE / HOST_ASISTENTE                  hosts publicos <etiqueta>.eastus.cloudapp.azure.com
+#   CLUSTER_ISSUER                                letsencrypt-prod | letsencrypt-staging
 # Se hace asi para no versionar nombres propios de la suscripcion.
+#
+# Los Services de los dos microservicios son ClusterIP (base): lo unico publico es el controlador de ingreso
+# (k8s/platform/ingress-nginx) y los Ingress de ingress.yaml, con TLS.
+# Todos los recursos del overlay (incluidos los Ingress de ingress.yaml) van en el namespace de la aplicacion. Sin esta linea los Ingress
+# se creaban en "default" y no podian apuntar a los Services de "vidacruz" (los backends de un Ingress son del mismo namespace).
+namespace: vidacruz
+
 resources:
   - ../../base
+  - ingress.yaml
 
 # Todas las imagenes salen del ACR (las de terceros se copian con "az acr import": sin limites de Docker Hub).
 images:
@@ -32,30 +41,3 @@ replicas:
     count: 1
   - name: clinical-assistant-service
     count: 1
-
-patches:
-  - target:
-      kind: Service
-      name: triage-service
-    patch: |-
-      - op: replace
-        path: /spec/type
-        value: LoadBalancer
-      - op: add
-        path: /metadata/annotations
-        value:
-          service.beta.kubernetes.io/azure-dns-label-name: DNS_LABEL_TRIAGE
-          # La sonda del balanceador pregunta por la readiness (publica); "/" respondería 401 y lo daria por caido.
-          service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /actuator/health/readiness
-  - target:
-      kind: Service
-      name: clinical-assistant-service
-    patch: |-
-      - op: replace
-        path: /spec/type
-        value: LoadBalancer
-      - op: add
-        path: /metadata/annotations
-        value:
-          service.beta.kubernetes.io/azure-dns-label-name: DNS_LABEL_ASISTENTE
-          service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /actuator/health/readiness

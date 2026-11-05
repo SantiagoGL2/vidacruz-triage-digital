@@ -1,0 +1,35 @@
+# Emisores de Let's Encrypt con el challenge HTTP-01 (cert-manager monta un Ingress temporal que atiende
+# /.well-known/acme-challenge/ en el puerto 80 del host). Se aplica DESPUES de instalar cert-manager.
+#
+#   letsencrypt-prod     certificados validos para navegadores y curl (limites estrictos: 5 fallos de validacion por hora)
+#   letsencrypt-staging  para probar el flujo sin gastar cupo; sus certificados NO son de confianza
+#
+# Sin "email": es opcional en ACME y no se versionan correos. Contrapartida: Let's Encrypt no avisa antes de que caduque
+# un certificado; cert-manager lo renueva solo (a los 60 de 90 dias).
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-prod-cuenta
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-staging-cuenta
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx

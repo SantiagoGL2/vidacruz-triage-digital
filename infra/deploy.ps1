@@ -10,9 +10,13 @@
     imagenes      docker build (linux/amd64) + push de los 2 servicios al ACR + az acr import de las imagenes de terceros
     credenciales  az aks get-credentials (kubeconfig local)
     secretos      crea/actualiza el Secret vidacruz-secrets desde variables de entorno / .env (nunca se versiona)
-    aplicar       renderiza k8s/overlays/azure con Kustomize, lo aplica y espera a que todo este Ready
-    verificar     muestra pods, servicios, URLs publicas y la salud de ambos servicios
-    todo          cuota -> infra -> imagenes -> credenciales -> secretos -> aplicar -> verificar
+    aplicar       renderiza k8s/overlays/azure con Kustomize (apps + Ingress con TLS), lo aplica y espera a que todo este Ready
+    plataforma    instala cert-manager + ingress-nginx (dos IP publicas con etiqueta DNS) y los emisores de Let's Encrypt
+    verificar     muestra pods, servicios, Ingress, certificados, URLs https y la salud de ambos servicios
+    todo          cuota -> infra -> imagenes -> credenciales -> secretos -> aplicar -> plataforma -> verificar
+
+  HTTPS: los Services de los microservicios son ClusterIP; lo publico es el Ingress (un host por servicio). -Emisor prod|staging
+  elige el ClusterIssuer de Let's Encrypt (staging para probar el flujo sin gastar cupo; sus certificados no son de confianza).
 
   Secretos: LLM_API_KEY (y opcionalmente LLM_BASE_URL, LLM_CHAT_MODEL, LLM_EMBEDDING_MODEL) se leen del entorno o del .env de la
   raiz. POSTGRES_PASSWORD, REDIS_PASSWORD, TRIAGE_API_KEY y ASSISTANT_API_KEY se generan al azar la primera vez y se guardan en
@@ -24,13 +28,16 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('cuota', 'plan', 'infra', 'imagenes', 'credenciales', 'secretos', 'aplicar', 'verificar', 'todo')]
+    [ValidateSet('cuota', 'plan', 'infra', 'imagenes', 'credenciales', 'secretos', 'aplicar', 'plataforma', 'verificar', 'todo')]
     [string]$Paso = 'todo',
     [string]$Region = 'eastus',
     [string]$Prefijo = 'vidacruz',
     [string]$GrupoRecursos = 'rg-vidacruz-triage',
     [string]$TamanoNodo = 'Standard_D4s_v4',
-    [string]$Namespace = 'vidacruz'
+    [string]$Namespace = 'vidacruz',
+    [ValidateSet('prod', 'staging')]
+    [string]$Emisor = 'prod',
+    [string]$VersionCertManager = 'v1.21.3'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -82,6 +89,8 @@ function Obtener-Salidas {
         Grupo        = $o.grupo.value
         EtiquetaTri  = "$Prefijo-triage-$sufijo"
         EtiquetaAsis = "$Prefijo-asistente-$sufijo"
+        HostTri      = "$Prefijo-triage-$sufijo.$Region.cloudapp.azure.com"
+        HostAsis     = "$Prefijo-asistente-$sufijo.$Region.cloudapp.azure.com"
     }
 }
 
@@ -257,8 +266,9 @@ function Paso-Aplicar {
     $render = ($render -join "`n") `
         -replace 'ACR_LOGIN_SERVER', $s.AcrServer `
         -replace 'IMAGE_TAG', $tag `
-        -replace 'DNS_LABEL_TRIAGE', $s.EtiquetaTri `
-        -replace 'DNS_LABEL_ASISTENTE', $s.EtiquetaAsis
+        -replace 'HOST_TRIAGE', $s.HostTri `
+        -replace 'HOST_ASISTENTE', $s.HostAsis `
+        -replace 'CLUSTER_ISSUER', "letsencrypt-$Emisor"
 
     # Un Job es inmutable: se recrea en cada despliegue (crear topics es idempotente).
     kubectl -n $Namespace delete job kafka-init --ignore-not-found | Out-Null
@@ -271,30 +281,78 @@ function Paso-Aplicar {
     foreach ($d in 'triage-service', 'clinical-assistant-service') { Ejecutar kubectl -n $Namespace rollout status deployment/$d --timeout=420s }
 }
 
-function Esperar-IpPublica($servicio) {
-    for ($i = 0; $i -lt 60; $i++) {
-        $ip = kubectl -n $Namespace get svc $servicio -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>$null
+function Esperar-IpPublica($servicio, $ns = $Namespace) {
+    for ($i = 0; $i -lt 90; $i++) {
+        $ip = kubectl -n $ns get svc $servicio -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>$null
         if ($ip) { return $ip }
         Start-Sleep -Seconds 5
     }
-    throw "El Service $servicio no obtuvo IP publica a tiempo."
+    throw "El Service $ns/$servicio no obtuvo IP publica a tiempo."
+}
+
+function Paso-Plataforma {
+    $s = Obtener-Salidas
+    Escribir "Instalando cert-manager $VersionCertManager (certificados de Let's Encrypt)"
+    Ejecutar kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/download/$VersionCertManager/cert-manager.yaml"
+    foreach ($d in 'cert-manager', 'cert-manager-cainjector', 'cert-manager-webhook') {
+        Ejecutar kubectl -n cert-manager rollout status deployment/$d --timeout=300s
+    }
+
+    Escribir 'Instalando ingress-nginx (un controlador, dos IP publicas con su etiqueta DNS)'
+    $render = kubectl kustomize (Join-Path $raiz 'k8s/platform/ingress-nginx')
+    if ($LASTEXITCODE -ne 0) { throw 'kubectl kustomize (ingress-nginx) fallo' }
+    $render = ($render -join "`n") -replace 'DNS_LABEL_TRIAGE', $s.EtiquetaTri -replace 'DNS_LABEL_ASISTENTE', $s.EtiquetaAsis
+    $render | kubectl apply -f -
+    if ($LASTEXITCODE -ne 0) { throw 'kubectl apply (ingress-nginx) fallo' }
+    Ejecutar kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=300s
+
+    Escribir "Emisores de Let's Encrypt (HTTP-01)"
+    # El webhook de cert-manager puede tardar unos segundos en aceptar los ClusterIssuer: se reintenta.
+    $emisores = Join-Path $raiz 'k8s/platform/cert-manager/cluster-issuers.yaml'
+    for ($i = 1; $i -le 12; $i++) {
+        kubectl apply -f $emisores
+        if ($LASTEXITCODE -eq 0) { break }
+        if ($i -eq 12) { throw 'No se pudieron crear los ClusterIssuer' }
+        Start-Sleep -Seconds 5
+    }
+
+    Escribir 'Esperando las IP publicas del controlador (las etiquetas DNS pasan de los antiguos LoadBalancer a estas)'
+    $ipT = Esperar-IpPublica 'ingress-nginx-controller' 'ingress-nginx'
+    $ipA = Esperar-IpPublica 'ingress-nginx-controller-asistente' 'ingress-nginx'
+    Write-Host ("  {0} -> {1}" -f $s.HostTri, $ipT) -ForegroundColor Green
+    Write-Host ("  {0} -> {1}" -f $s.HostAsis, $ipA) -ForegroundColor Green
 }
 
 function Paso-Verificar {
     $s = Obtener-Salidas
-    Escribir "kubectl get pods,svc -n $Namespace"
-    Ejecutar kubectl get 'pods,svc' -n $Namespace -o wide
-    $ipT = Esperar-IpPublica 'triage-service'
-    $ipA = Esperar-IpPublica 'clinical-assistant-service'
-    $urlT = "http://$($s.EtiquetaTri).$Region.cloudapp.azure.com"
-    $urlA = "http://$($s.EtiquetaAsis).$Region.cloudapp.azure.com"
+    Escribir "kubectl get pods,svc,ingress,certificate -n $Namespace"
+    Ejecutar kubectl get 'pods,svc,ingress,certificate' -n $Namespace -o wide
+    Escribir 'kubectl get svc -n ingress-nginx'
+    Ejecutar kubectl get svc -n ingress-nginx
+    Escribir 'Esperando los certificados (cert-manager + Let''s Encrypt, suele tardar menos de un minuto)'
+    kubectl -n $Namespace wait --for=condition=Ready certificate/triage-tls certificate/asistente-tls --timeout=420s
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host 'Los certificados no estan listos. Diagnostico:' -ForegroundColor Yellow
+        kubectl -n $Namespace get certificate,certificaterequest,order,challenge
+        throw 'Certificados no listos (revisa los challenge: DNS, puerto 80 y limites de Let''s Encrypt).'
+    }
+    $urlT = "https://$($s.HostTri)"
+    $urlA = "https://$($s.HostAsis)"
     Write-Host ''
-    Write-Host "triage-service             : $urlT   (IP $ipT)" -ForegroundColor Green
-    Write-Host "clinical-assistant-service : $urlA   (IP $ipA)" -ForegroundColor Green
+    Write-Host "triage-service             : $urlT" -ForegroundColor Green
+    Write-Host "clinical-assistant-service : $urlA" -ForegroundColor Green
     Write-Host "Swagger UI                 : $urlT/swagger-ui.html  |  $urlA/swagger-ui.html"
     foreach ($u in $urlT, $urlA) {
-        try { $r = Invoke-RestMethod "$u/actuator/health/readiness" -TimeoutSec 15; Write-Host "  $u -> $($r.status)" }
+        try { $r = Invoke-RestMethod "$u/actuator/health/readiness" -TimeoutSec 20; Write-Host "  $u -> $($r.status)" }
         catch { Write-Host "  $u -> sin respuesta aun ($($_.Exception.Message))" -ForegroundColor Yellow }
+        # HTTP debe redirigir a HTTPS (308)
+        try {
+            $q = [System.Net.HttpWebRequest]::Create(($u -replace '^https', 'http') + '/actuator/health/liveness')
+            $q.AllowAutoRedirect = $false; $q.Timeout = 20000
+            $resp = $q.GetResponse(); $codigo = [int]$resp.StatusCode; $resp.Close()
+        }
+        catch [System.Net.WebException] { $codigo = [int]$_.Exception.Response.StatusCode }
+        Write-Host "    http -> HTTP $codigo (redireccion a https esperada: 301/308)"
     }
     Write-Host 'Las API keys estan en infra/.env.azure (TRIAGE_API_KEY, ASSISTANT_API_KEY).'
 }
@@ -307,6 +365,7 @@ switch ($Paso) {
     'credenciales' { Paso-Credenciales }
     'secretos' { Paso-Secretos }
     'aplicar' { Paso-Aplicar }
+    'plataforma' { Paso-Plataforma }
     'verificar' { Paso-Verificar }
-    'todo' { Paso-Cuota; Paso-Infra; Paso-Imagenes; Paso-Credenciales; Paso-Secretos; Paso-Aplicar; Paso-Verificar }
+    'todo' { Paso-Cuota; Paso-Infra; Paso-Imagenes; Paso-Credenciales; Paso-Secretos; Paso-Aplicar; Paso-Plataforma; Paso-Verificar }
 }

@@ -1,20 +1,23 @@
 # Despliegue en Azure (AKS)
 
 Guía operativa para desplegar, verificar y destruir VidaCruz Triage en Azure. Las decisiones y sus motivos están en el
-[ADR 0008](adr/0008-despliegue-en-aks.md); la autenticación en el [ADR 0007](adr/0007-autenticacion-por-api-key.md).
+[ADR 0008](adr/0008-despliegue-en-aks.md); la autenticación en el [ADR 0007](adr/0007-autenticacion-por-api-key.md); HTTPS en el
+[ADR 0009](adr/0009-https-con-ingress-nginx-y-cert-manager.md).
 
 ## Arquitectura
 
 ```mermaid
 flowchart LR
-    cliente([Recepción / tablero / Swagger]) -->|HTTP + X-API-Key| lb1[LoadBalancer<br/>triage]
-    cliente -->|HTTP + X-API-Key| lb2[LoadBalancer<br/>asistente]
+    cliente([Recepción / tablero / Swagger]) -->|HTTPS + X-API-Key| ing1[Ingress NGINX<br/>IP 1 · host triage]
+    cliente -->|HTTPS + X-API-Key| ing2[Ingress NGINX<br/>IP 2 · host asistente]
 
     subgraph rg["Grupo de recursos rg-vidacruz-triage (eastus)"]
         acr[(ACR Basic<br/>imágenes)]
         subgraph aks["AKS Free · 1 nodo Standard_D4s_v4 · namespace vidacruz"]
-            lb1 --> triage[triage-service]
-            lb2 --> asistente[clinical-assistant-service]
+            ing1 --> triage[triage-service]
+            ing2 --> asistente[clinical-assistant-service]
+            cm[cert-manager<br/>Let's Encrypt HTTP-01] -.->|certificados| ing1
+            cm -.->|certificados| ing2
             triage -->|R2DBC| pg[(postgres<br/>StatefulSet + PVC 5Gi)]
             triage -->|outbox → triaje.eventos| kafka[(kafka KRaft<br/>StatefulSet + PVC 5Gi)]
             kafka -->|alertas| triage
@@ -28,10 +31,14 @@ flowchart LR
     asistente -->|HTTPS · Resilience4j| llm([Proveedor LLM / OpenAI])
 ```
 
-* Solo los dos `LoadBalancer` son públicos (`<etiqueta>.eastus.cloudapp.azure.com`). PostgreSQL, Kafka y Redis son internos
-  (`ClusterIP`). El triage **no** depende del asistente: si el LLM cae, el asistente responde 503 y el triage sigue.
-* Parte de Kubernetes: `k8s/base` (namespace, ConfigMaps, StatefulSets, Job de topics, Deployments, Services) y
-  `k8s/overlays/azure` (imágenes del ACR, `LoadBalancer`, etiquetas DNS). Infraestructura: `infra/main.bicep`.
+* **Solo el controlador de ingreso es público**, con TLS (`https://<etiqueta>.eastus.cloudapp.azure.com`; HTTP redirige a HTTPS).
+  Los `Service` de triage y del asistente, PostgreSQL, Kafka y Redis son `ClusterIP`. El triage **no** depende del asistente: si el
+  LLM cae, el asistente responde 503 y el triage sigue.
+* **Dos hosts, un controlador:** Azure da una etiqueta DNS por IP pública y ambos servicios sirven Swagger y *health* en la raíz, así
+  que cada uno tiene su host. Un único `ingress-nginx` con dos `Service` `LoadBalancer` (dos IP, mismos pods) los atiende; elige el
+  backend por el `Host`. Las rutas de la API no cambian. Detalle y alternativas: [ADR 0009](adr/0009-https-con-ingress-nginx-y-cert-manager.md).
+* Kubernetes: `k8s/base` (namespace, ConfigMaps, StatefulSets, Job de topics, Deployments, Services), `k8s/overlays/azure` (imágenes
+  del ACR y los `Ingress` con TLS) y `k8s/platform/` (ingress-nginx y los emisores de Let's Encrypt). Infraestructura: `infra/main.bicep`.
 
 ## Costo aproximado
 
@@ -47,6 +54,11 @@ Precios de la API de Azure (eastus, USD, sin impuestos), instalación con el dis
 | Discos de datos (Standard SSD: 5 + 5 + 2 GiB) | 0,60 + 0,60 + 0,30 USD/mes | 0,05 |
 | Plano de control AKS (plan Free) | | 0,00 |
 | **Total** | | **≈ 6,1 (≈ 183 USD/mes)** |
+
+HTTPS **no añade costo**: los dos `Service` del controlador usan las mismas dos IP públicas que antes tenían los `LoadBalancer` de los
+servicios (se libera una pareja y se crea la otra), Let's Encrypt es gratuito y cert-manager/ingress-nginx suman unos 300 MiB de
+memoria en el nodo. Los puertos 80 y 443 de los dos `Service` y la regla de salida suman 5 reglas, justo el límite incluido en el
+balanceador Standard (cada regla extra costaría 0,01 USD/h).
 
 El consumo del proveedor de IA (OpenAI) se factura aparte. Con 200 USD de crédito, el entorno encendido dura ~32 días.
 **Para no gastar, destrúyelo cuando no lo uses** (sección final); volver a crearlo tarda ~10 minutos.
@@ -70,8 +82,9 @@ PowerShell (Windows) o Bash (`./infra/deploy.sh`, mismos pasos y nombres):
 ./infra/deploy.ps1 -Paso imagenes       # docker build/push de los 2 servicios + az acr import de postgres/kafka/redis/busybox
 ./infra/deploy.ps1 -Paso credenciales   # kubeconfig de AKS
 ./infra/deploy.ps1 -Paso secretos       # Secret vidacruz-secrets (claves generadas en infra/.env.azure + LLM_API_KEY)
-./infra/deploy.ps1 -Paso aplicar        # kubectl kustomize del overlay + apply + espera a que todo esté Ready
-./infra/deploy.ps1 -Paso verificar      # pods, servicios, URLs públicas y health
+./infra/deploy.ps1 -Paso aplicar        # kubectl kustomize del overlay (apps + Ingress) + apply + espera a que todo esté Ready
+./infra/deploy.ps1 -Paso plataforma     # cert-manager + ingress-nginx (2 IP públicas con etiqueta DNS) + emisores de Let's Encrypt
+./infra/deploy.ps1 -Paso verificar      # pods, servicios, Ingress, certificados, URLs https y health
 ./infra/deploy.ps1                      # todo lo anterior (menos plan) de una vez
 ```
 
@@ -79,8 +92,23 @@ Todos los pasos son idempotentes (se pueden repetir): `cuota` se omite sola si e
 cuota), `aplicar` recrea el Job de topics, y los secretos generados se reutilizan. El tag de imagen es el hash corto de git
 (`-wip<fecha>` si hay cambios sin commitear).
 
-Parámetros: `-Region`, `-Prefijo`, `-GrupoRecursos`, `-TamanoNodo`, `-Namespace` (en bash, variables `REGION`, `PREFIJO`,
-`GRUPO`, `TALLA_NODO`, `NAMESPACE`).
+Parámetros: `-Region`, `-Prefijo`, `-GrupoRecursos`, `-TamanoNodo`, `-Namespace`, `-Emisor prod|staging` y `-VersionCertManager` (en
+bash, variables `REGION`, `PREFIJO`, `GRUPO`, `TALLA_NODO`, `NAMESPACE`, `EMISOR`, `VERSION_CERT_MANAGER`).
+
+### HTTPS: cómo funciona y cómo se prueba
+
+1. `aplicar` deja los `Service` de los microservicios en `ClusterIP` (libera las IP y las etiquetas DNS de los antiguos
+   `LoadBalancer`) y crea los `Ingress` con la anotación `cert-manager.io/cluster-issuer`.
+2. `plataforma` instala cert-manager (versión fijada) e ingress-nginx; los dos `Service` del controlador reclaman las etiquetas DNS y
+   cert-manager, al ver los `Ingress`, pide un certificado a Let's Encrypt por HTTP-01 (monta un `Ingress` temporal en el puerto 80
+   del host). Al validarlo guarda el certificado en los `Secret` `triage-tls` y `asistente-tls` y lo renueva solo.
+3. `verificar` espera a que los dos `Certificate` estén `Ready`, imprime las URLs `https://…`, comprueba el *health* y que HTTP
+   redirige a HTTPS.
+
+Si el certificado no sale (`kubectl -n vidacruz get certificate,order,challenge`): casi siempre es DNS aún sin propagar o el puerto 80
+inalcanzable. Para probar el flujo sin gastar el cupo de Let's Encrypt (5 fallos de validación por hora y host): `-Emisor staging`
+(sus certificados **no** son de confianza: `curl -k`, o `INSEGURO=1` / `-NoVerificarCertificado` en la demo) y luego `-Emisor prod`.
+Migrar desde los `LoadBalancer` antiguos implica una interrupción de pocos minutos (la etiqueta DNS solo puede estar en una IP).
 
 ### Dónde quedan las claves
 
@@ -89,7 +117,7 @@ generadas al azar. **Nunca se imprimen.** Para usarlas en un `curl`, léelas de 
 
 ```bash
 set -a; . infra/.env.azure; set +a
-curl -H "X-API-Key: $TRIAGE_API_KEY" http://<etiqueta-triage>.eastus.cloudapp.azure.com/triage/pacientes/<id>
+curl -H "X-API-Key: $TRIAGE_API_KEY" https://<etiqueta-triage>.eastus.cloudapp.azure.com/triage/pacientes/<id>
 ```
 
 ## Verificar
@@ -97,14 +125,31 @@ curl -H "X-API-Key: $TRIAGE_API_KEY" http://<etiqueta-triage>.eastus.cloudapp.az
 `./infra/deploy.ps1 -Paso verificar` imprime pods, servicios, las URLs y el health. A mano:
 
 ```bash
-kubectl get pods,svc -n vidacruz                          # todo Running/Ready; kafka-init en Completed
+kubectl get pods,svc,ingress,certificate -n vidacruz      # todo Running/Ready; kafka-init en Completed; certificados Ready
+kubectl get svc -n ingress-nginx                           # las dos IP públicas del controlador
 kubectl -n vidacruz logs deploy/triage-service --tail=50  # logs JSON con correlationId
-URL_T=http://<etiqueta-triage>.eastus.cloudapp.azure.com
-URL_A=http://<etiqueta-asistente>.eastus.cloudapp.azure.com
+URL_T=https://<etiqueta-triage>.eastus.cloudapp.azure.com
+URL_A=https://<etiqueta-asistente>.eastus.cloudapp.azure.com
 curl $URL_T/actuator/health/readiness                      # {"status":"UP"}  (público)
 curl -o /dev/null -w '%{http_code}\n' $URL_T/swagger-ui.html   # 200
 curl -i $URL_T/triage/pacientes/00000000-0000-0000-0000-000000000000   # 401 sin API key
+curl -sI http://<etiqueta-triage>.eastus.cloudapp.azure.com/ | head -3  # 308 -> https://
 ```
+
+### Demo de punta a punta
+
+`scripts/demo.ps1` / `scripts/demo.sh` recorren todo el flujo (E1-E6, validación, transiciones, estado de urgencias, reporte y las
+3 consultas al asistente) contra cualquier entorno, con OK/FALLO por paso:
+
+```powershell
+./scripts/demo.ps1 -ArchivoEnv infra/.env.azure -UrlTriage https://<etiqueta-triage>.eastus.cloudapp.azure.com -UrlAsistente https://<etiqueta-asistente>.eastus.cloudapp.azure.com
+```
+
+```bash
+ARCHIVO_ENV=infra/.env.azure TRIAGE_URL=https://<etiqueta-triage>.eastus.cloudapp.azure.com ASISTENTE_URL=https://<etiqueta-asistente>.eastus.cloudapp.azure.com ./scripts/demo.sh
+```
+
+En Azure el paso del escalamiento se omite solo (el SLA real de CRITICO es 5 min, más que la espera máxima de la demo) y lo dice.
 
 Prueba funcional (la que se ejecutó al desplegar, con resultado esperado):
 
@@ -201,7 +246,10 @@ Notas:
   para réplicas extra.
 * El asistente no pasa la readiness: espera a la indexación de protocolos (`indiceProtocolos` en
   `/actuator/health`); si falla, mira el proveedor LLM (`LLM_API_KEY`, saldo/cuota).
-* Las URLs son HTTP sin TLS y Swagger está encendido: es un entorno de prueba.
+* Swagger UI está encendido y la API key viaja por HTTPS pero identifica a la aplicación, no a la persona: es un entorno de prueba.
+* `ingress-nginx` está retirado upstream (sin parches de seguridad): ver [ADR 0009](adr/0009-https-con-ingress-nginx-y-cert-manager.md).
+* Los `Ingress` aparecían en el namespace `default` y no enrutaban: el overlay no declaraba `namespace: vidacruz` (kubeconform solo valida la forma). Corregido en el overlay y vigilado en el CI (paso «todo recurso del overlay de Azure va en el namespace vidacruz»). Si pasa en otro overlay: `kubectl get ingress -A`.
+* Certificado `Pending`: `kubectl -n vidacruz describe challenge`; suele ser el DNS aún sin propagar o el puerto 80 bloqueado.
 
 ## Destruir
 

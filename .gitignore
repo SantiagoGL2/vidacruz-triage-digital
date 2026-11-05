@@ -57,3 +57,6 @@ Thumbs.db
 # --- Herramientas locales ---
 HELP.md
 .claude/settings.local.json
+
+# --- Despliegue en Azure (infra/): claves generadas y ultimo tag de imagen ---
+infra/.ultimo-tag

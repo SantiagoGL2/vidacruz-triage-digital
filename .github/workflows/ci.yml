@@ -84,3 +84,70 @@ jobs:
             ${{ matrix.servicio }}/build/test-results/test/*.xml
           if-no-files-found: warn
           retention-days: 14
+
+  # B4 (docs/trazabilidad.md): docker-compose y los manifests de Kubernetes se validan en cada cambio, no al desplegar.
+  manifiestos:
+    name: manifiestos (compose y Kubernetes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sin .env (no se versiona): las variables obligatorias de compose se dan con valores de relleno.
+      - name: docker compose config (con y sin el perfil de observabilidad)
+        env:
+          POSTGRES_PASSWORD: ci
+          REDIS_PASSWORD: ci
+          TRIAGE_API_KEY: ci
+          ASSISTANT_API_KEY: ci
+          LLM_API_KEY: ci
+        run: |
+          docker compose config --quiet
+          docker compose --profile observabilidad config --quiet
+
+      - name: Instalar kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          sudo mv kubeconform /usr/local/bin/
+          kubeconform -v
+
+      # base, overlay de Azure y la plataforma de ingreso (ingress-nginx) renderizados con Kustomize; los CRD de cert-manager
+      # se validan con el catalogo de esquemas de la comunidad.
+      - name: kubeconform (kustomize base, overlays/azure y plataforma)
+        run: |
+          SCHEMAS=(-schema-location default -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json')
+          for dir in k8s/base k8s/overlays/azure k8s/platform/ingress-nginx; do
+            echo "== $dir"
+            kubectl kustomize "$dir" | kubeconform -strict -summary -kubernetes-version 1.33.0 "${SCHEMAS[@]}" -
+          done
+          echo "== emisores de cert-manager y ejemplo de Secret"
+          kubeconform -strict -summary -kubernetes-version 1.33.0 "${SCHEMAS[@]}" k8s/platform/cert-manager/cluster-issuers.yaml k8s/secret.example.yaml
+
+      # kubeconform solo valida la forma. Este paso valida lo que fallo en el primer despliegue con HTTPS: un recurso del overlay sin
+      # namespace (los Ingress se crearon en "default" y no podian ver los Services de "vidacruz").
+      - name: todo recurso del overlay de Azure va en el namespace vidacruz
+        run: |
+          pip install --quiet pyyaml
+          kubectl kustomize k8s/overlays/azure | python3 -c "
+          import sys, yaml
+          docs = [d for d in yaml.safe_load_all(sys.stdin) if d]
+          fuera = [(d['kind'], d['metadata']['name'], d['metadata'].get('namespace')) for d in docs
+                   if d['kind'] != 'Namespace' and d['metadata'].get('namespace') != 'vidacruz']
+          print(len(docs), 'recursos; fuera de vidacruz:', fuera or 'ninguno')
+          sys.exit(1 if fuera else 0)"
+
+  # B9 (docs/trazabilidad.md): "sin credenciales hardcodeadas" se comprueba sobre TODO el historial de git.
+  secretos:
+    name: secretos (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # historial completo
+
+      # CLI oficial (la accion gitleaks-action pide licencia en organizaciones). Falla si encuentra algo.
+      - name: gitleaks (todo el historial)
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz | tar xz gitleaks
+          ./gitleaks detect --source . --redact --verbose --no-banner --log-opts="--all"

@@ -4,9 +4,9 @@ name: CI
 # ProveedorRealTests (RAG contra OpenAI real) se omite solo: necesita LLM_API_KEY y aqui no se inyectan secretos.
 on:
   push:
-    branches: [main]
+    branches: [development,main]
   pull_request:
-    branches: [main]
+    branches: [development,main]
 
 concurrency:
   group: ci-${{ github.ref }}

@@ -54,14 +54,14 @@ public record Paciente(
 		}
 	}
 
-	/** Valida nombre (3-100 tras trim), edad (0-120) y queja (obligatoria, max 500). */
+	/** Valida nombre y edad (rangos en {@link RangoClinico}) y queja (obligatoria, max {@link #QUEJA_MAX}). */
 	public static List<CampoInvalido> validarDatosPersonales(String nombreCompleto, int edad, String quejaPrincipal) {
 		List<CampoInvalido> errores = new ArrayList<>();
 		int largoNombre = nombreCompleto == null ? 0 : nombreCompleto.trim().length();
-		if (largoNombre < 3 || largoNombre > 100) {
-			errores.add(new CampoInvalido("nombreCompleto", nombreCompleto, "3-100 caracteres"));
+		if (!RangoClinico.NOMBRE.contiene(largoNombre)) {
+			errores.add(new CampoInvalido(RangoClinico.NOMBRE.campo(), nombreCompleto, RangoClinico.NOMBRE.descripcion()));
 		}
-		Validaciones.entero(errores, "edad", edad, 0, 120, " anios");
+		Validaciones.entero(errores, RangoClinico.EDAD, edad);
 		if (quejaPrincipal == null || quejaPrincipal.isBlank()) {
 			errores.add(new CampoInvalido("quejaPrincipal", quejaPrincipal, "obligatoria, no vacia"));
 		} else if (quejaPrincipal.trim().length() > QUEJA_MAX) {

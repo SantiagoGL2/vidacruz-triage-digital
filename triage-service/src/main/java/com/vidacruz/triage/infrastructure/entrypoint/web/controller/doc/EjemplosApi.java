@@ -14,6 +14,12 @@ public final class EjemplosApi {
 	// ---------------------------------------------------------------- valores que se repiten en varios ejemplos
 
 	/** Paciente del enunciado E1 (CRITICO) usado como protagonista de los ejemplos. */
+	// Descripciones de respuesta repetidas en varios endpoints
+	public static final String DESC_401_API_KEY = "Falta el header `X-API-Key` o es invalido.";
+	public static final String DESC_404_PACIENTE = "No existe un paciente con ese id.";
+	public static final String DESC_500 = "Error interno inesperado.";
+	public static final String DESC_ID_PACIENTE = "Identificador del paciente";
+
 	public static final String ID_PACIENTE = "e62f5bb0-848c-4343-9887-19cc8fcf3a0a";
 	public static final String ID_EVENTO_ALERTA = "ac2bf6bf-3a64-4d0e-8d7e-0a8f9d6a7b21";
 	public static final String FECHA_REGISTRO = "2026-11-04T15:17:57.285937Z";

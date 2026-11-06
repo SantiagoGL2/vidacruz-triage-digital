@@ -62,10 +62,10 @@ class ReporteOperacionController {
 			@ApiResponse(responseCode = "400", description = "Parametro ausente, con formato invalido, `desde >= hasta` o rango mayor al maximo. `errores[].campo` indica el parametro.",
 					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_400_REPORTE))),
-			@ApiResponse(responseCode = "401", description = "Falta el header `X-API-Key` o es invalido.",
+			@ApiResponse(responseCode = "401", description = EjemplosApi.DESC_401_API_KEY,
 					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_401))),
-			@ApiResponse(responseCode = "500", description = "Error interno inesperado.",
+			@ApiResponse(responseCode = "500", description = EjemplosApi.DESC_500,
 					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_500)))})
 	@GetMapping("/operacion")

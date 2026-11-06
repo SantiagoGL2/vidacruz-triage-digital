@@ -21,6 +21,9 @@ public final class ClasificadorTriaje {
 	private static final List<NivelTriaje> NIVELES_EN_ORDEN =
 			List.of(NivelTriaje.CRITICO, NivelTriaje.URGENTE, NivelTriaje.URGENTE_2);
 
+	// Los umbrales se dejan escritos en cada regla a proposito (no son constantes con nombre): esta tabla replica la RN-01 del
+	// enunciado fila por fila y se lee y se audita mejor asi, con la descripcion al lado. Los rangos de ENTRADA, en cambio,
+	// si tienen una sola fuente de verdad (RangoClinico).
 	private static final List<Regla> REGLAS = List.of(
 			new Regla(NivelTriaje.CRITICO, "FC < 40", s -> s.frecuenciaCardiaca() < 40),
 			new Regla(NivelTriaje.CRITICO, "FC > 120", s -> s.frecuenciaCardiaca() > 120),

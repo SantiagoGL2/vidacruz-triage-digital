@@ -4,20 +4,22 @@ import com.vidacruz.triage.domain.model.enums.NivelTriaje;
 import java.util.EnumMap;
 import java.util.Map;
 
-/** Politica con los valores del enunciado (5, 10, 30, 60, 120) o con los minutos indicados. */
+/** Politica con el SLA por defecto de cada {@link NivelTriaje} (enunciado: 5, 10, 30, 60, 120) o con los minutos indicados. */
 public final class PoliticaSlaEstandar implements PoliticaSla {
-
-	private static final Map<NivelTriaje, Integer> POR_DEFECTO = Map.of(
-			NivelTriaje.CRITICO, 5,
-			NivelTriaje.URGENTE, 10,
-			NivelTriaje.URGENTE_2, 30,
-			NivelTriaje.NO_URGENTE, 60,
-			NivelTriaje.NO_URGENTE_2, 120);
 
 	private final Map<NivelTriaje, Integer> minutos;
 
 	public PoliticaSlaEstandar() {
-		this(POR_DEFECTO);
+		this(porDefecto());
+	}
+
+	/** Los SLA por defecto que declara cada nivel. */
+	public static Map<NivelTriaje, Integer> porDefecto() {
+		EnumMap<NivelTriaje, Integer> minutos = new EnumMap<>(NivelTriaje.class);
+		for (NivelTriaje nivel : NivelTriaje.values()) {
+			minutos.put(nivel, nivel.slaPorDefectoMinutos());
+		}
+		return minutos;
 	}
 
 	/** Exige un valor positivo para cada nivel. */

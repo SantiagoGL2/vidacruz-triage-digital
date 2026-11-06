@@ -23,6 +23,9 @@ import reactor.core.publisher.Mono;
 @Slf4j
 public class PublicarEventosPendientesUseCaseImpl implements PublicarEventosPendientesUseCase {
 
+	/** Largo maximo del motivo de fallo que se guarda en outbox_eventos (el texto de una excepcion puede ser enorme). */
+	private static final int MOTIVO_FALLO_MAX_CARACTERES = 500;
+
 	private enum Resultado { PUBLICADO, FALLIDO }
 
 	private final OutboxRepositoryPort outbox;
@@ -79,7 +82,7 @@ public class PublicarEventosPendientesUseCaseImpl implements PublicarEventosPend
 
 	private static String motivo(Throwable e) {
 		String texto = e.getClass().getSimpleName() + ": " + e.getMessage();
-		return texto.length() > 500 ? texto.substring(0, 500) : texto;
+		return texto.length() > MOTIVO_FALLO_MAX_CARACTERES ? texto.substring(0, MOTIVO_FALLO_MAX_CARACTERES) : texto;
 	}
 
 }

@@ -79,7 +79,7 @@ class PacienteController {
 			@ApiResponse(responseCode = "400", description = "Campo ausente, de tipo incorrecto o fuera de rango. `errores[]` indica el campo, el valor recibido y el rango esperado.",
 					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_400_VALIDACION))),
-			@ApiResponse(responseCode = "401", description = "Falta el header `X-API-Key` o es invalido.",
+			@ApiResponse(responseCode = "401", description = EjemplosApi.DESC_401_API_KEY,
 					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_401))),
 			@ApiResponse(responseCode = "500", description = "Error interno inesperado (el detalle solo va al log; reportar el `correlationId`).",
@@ -118,20 +118,20 @@ class PacienteController {
 			@ApiResponse(responseCode = "400", description = "`estado` ausente, desconocido o `id` que no es un UUID.",
 					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_400_VALIDACION))),
-			@ApiResponse(responseCode = "401", description = "Falta el header `X-API-Key` o es invalido.",
+			@ApiResponse(responseCode = "401", description = EjemplosApi.DESC_401_API_KEY,
 					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_401))),
-			@ApiResponse(responseCode = "404", description = "No existe un paciente con ese id.",
+			@ApiResponse(responseCode = "404", description = EjemplosApi.DESC_404_PACIENTE,
 					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_404))),
 			@ApiResponse(responseCode = "409", description = "Transicion no permitida (incluye pedir el estado en el que ya esta) o conflicto de concurrencia.",
 					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(name = "ALTA -> EN_CONSULTA", value = EjemplosApi.ERROR_409_TRANSICION))),
-			@ApiResponse(responseCode = "500", description = "Error interno inesperado.",
+			@ApiResponse(responseCode = "500", description = EjemplosApi.DESC_500,
 					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_500)))})
 	@PatchMapping("/{id}/estado")
-	Mono<PacienteResponse> cambiarEstado(@PathVariable @Parameter(description = "Identificador del paciente", example = EjemplosApi.ID_PACIENTE) UUID id,
+	Mono<PacienteResponse> cambiarEstado(@PathVariable @Parameter(description = EjemplosApi.DESC_ID_PACIENTE, example = EjemplosApi.ID_PACIENTE) UUID id,
 			@Valid @RequestBody CambiarEstadoRequest r) {
 		// El tiempo en el estado nuevo recien empieza: se calcula desde la fecha del cambio, sin otra lectura.
 		return cambiarEstado.cambiarEstado(id, r.estado())
@@ -151,18 +151,18 @@ class PacienteController {
 			@ApiResponse(responseCode = "400", description = "El `id` no es un UUID valido.",
 					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_400_VALIDACION))),
-			@ApiResponse(responseCode = "401", description = "Falta el header `X-API-Key` o es invalido.",
+			@ApiResponse(responseCode = "401", description = EjemplosApi.DESC_401_API_KEY,
 					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_401))),
-			@ApiResponse(responseCode = "404", description = "No existe un paciente con ese id.",
+			@ApiResponse(responseCode = "404", description = EjemplosApi.DESC_404_PACIENTE,
 					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_404))),
-			@ApiResponse(responseCode = "500", description = "Error interno inesperado.",
+			@ApiResponse(responseCode = "500", description = EjemplosApi.DESC_500,
 					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_500)))})
 	@GetMapping("/{id}")
 	Mono<PacienteResponse> consultar(
-			@PathVariable @Parameter(description = "Identificador del paciente", example = EjemplosApi.ID_PACIENTE) UUID id) {
+			@PathVariable @Parameter(description = EjemplosApi.DESC_ID_PACIENTE, example = EjemplosApi.ID_PACIENTE) UUID id) {
 		return consultar.consultar(id).map(PacienteResponse::desde);
 	}
 

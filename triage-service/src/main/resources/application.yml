@@ -121,6 +121,8 @@ triage:
     topic: ${TRIAGE_KAFKA_TOPIC:triaje.eventos}
     event-version: 1
   # RN-02: SLA en minutos por nivel (sobrescribibles para probar el escalamiento sin esperar decenas de minutos).
+  # El valor POR DEFECTO no se escribe aqui: vive en NivelTriaje.slaPorDefectoMinutos() (unica fuente de verdad). Una variable
+  # vacia o ausente deja ese valor; TriageSlaProperties lo completa.
   # El SLA se congela en el paciente al registrarlo: cambiar esto solo afecta a pacientes NUEVOS.
   # RF-03: el proceso de fondo evalua cada `intervalo-evaluacion` los pacientes REGISTRADO cuyo SLA vencio.
   sla:
@@ -128,11 +130,11 @@ triage:
     intervalo-evaluacion: ${TRIAGE_SLA_INTERVALO_EVALUACION:PT30S}
     lote: ${TRIAGE_SLA_LOTE:100}
     minutos:
-      CRITICO: ${TRIAGE_SLA_CRITICO:5}
-      URGENTE: ${TRIAGE_SLA_URGENTE:10}
-      URGENTE_2: ${TRIAGE_SLA_URGENTE_2:30}
-      NO_URGENTE: ${TRIAGE_SLA_NO_URGENTE:60}
-      NO_URGENTE_2: ${TRIAGE_SLA_NO_URGENTE_2:120}
+      CRITICO: ${TRIAGE_SLA_CRITICO:}
+      URGENTE: ${TRIAGE_SLA_URGENTE:}
+      URGENTE_2: ${TRIAGE_SLA_URGENTE_2:}
+      NO_URGENTE: ${TRIAGE_SLA_NO_URGENTE:}
+      NO_URGENTE_2: ${TRIAGE_SLA_NO_URGENTE_2:}
   # RN-01: quejas administrativas (nivel 5). Lista del enunciado; la queja es administrativa si CONTIENE alguna
   # frase (sin tildes ni mayusculas). Para cambiarla hay que redefinir la lista completa.
   clasificacion:

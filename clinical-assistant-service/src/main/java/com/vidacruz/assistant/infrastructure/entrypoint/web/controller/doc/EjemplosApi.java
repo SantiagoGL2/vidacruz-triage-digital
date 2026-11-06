@@ -10,6 +10,10 @@ public final class EjemplosApi {
 
 	// ---------------------------------------------------------------- valores que se repiten en varios ejemplos
 
+	// Descripciones de respuesta repetidas en varios endpoints
+	public static final String DESC_401_API_KEY = "Falta el header `X-API-Key` o es invalido.";
+	public static final String DESC_500 = "Error interno inesperado.";
+
 	public static final String CORRELATION_ID = "demo-001";
 	/** Instante cualquiera para los campos {@code timestamp} de los ejemplos de error. */
 	public static final String FECHA_EJEMPLO = "2026-11-04T15:17:57.285937Z";

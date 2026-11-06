@@ -1,5 +1,6 @@
 package com.vidacruz.triage.infrastructure.entrypoint.web.dto.response;
 
+import com.vidacruz.triage.domain.model.RangosClinicos;
 import com.vidacruz.triage.application.result.PacienteConsultado;
 import com.vidacruz.triage.domain.model.Paciente;
 import com.vidacruz.triage.domain.model.SignosVitales;
@@ -13,9 +14,9 @@ import java.util.UUID;
 /** Vista completa del paciente (GET y respuesta del PATCH). */
 @Schema(description = "Datos completos del paciente, su estado actual y el tiempo en ese estado")
 public record PacienteResponse(
-		@Schema(description = "Identificador del paciente", example = EjemplosApi.ID_PACIENTE) UUID id,
+		@Schema(description = EjemplosApi.DESC_ID_PACIENTE, example = EjemplosApi.ID_PACIENTE) UUID id,
 		@Schema(description = "Nombre completo", example = "Carlos Andrés Pérez") String nombreCompleto,
-		@Schema(description = "Edad en años", example = "58", minimum = "0", maximum = "120") int edad,
+		@Schema(description = "Edad en años", example = "58", minimum = "" + RangosClinicos.EDAD_MIN, maximum = "" + RangosClinicos.EDAD_MAX) int edad,
 		SignosVitalesResponse signosVitales,
 		@Schema(description = "Queja principal", example = "Dolor torácico") String quejaPrincipal,
 		@Schema(description = "Nivel de triaje (RN-01)", example = ValoresApi.CRITICO,
@@ -34,13 +35,13 @@ public record PacienteResponse(
 
 	@Schema(description = "Signos vitales medidos al registrar")
 	public record SignosVitalesResponse(
-			@Schema(description = "Frecuencia cardíaca (bpm)", example = "130", minimum = "20", maximum = "250") int frecuenciaCardiaca,
-			@Schema(description = "Presión sistólica (mmHg)", example = "180", minimum = "60", maximum = "260") int presionSistolica,
-			@Schema(description = "Presión diastólica (mmHg)", example = "110", minimum = "30", maximum = "160") int presionDiastolica,
-			@Schema(description = "SpO2 (%)", example = "97", minimum = "70", maximum = "100") int spo2,
-			@Schema(description = "Temperatura (°C)", example = "36.8", minimum = "34.0", maximum = "42.0") double temperatura,
-			@Schema(description = "Dolor (0-10)", example = "8", minimum = "0", maximum = "10") int dolor,
-			@Schema(description = "Glasgow (3-15)", example = "15", minimum = "3", maximum = "15") int gcs) {
+			@Schema(description = "Frecuencia cardíaca (bpm)", example = "130", minimum = "" + RangosClinicos.FRECUENCIA_CARDIACA_MIN, maximum = "" + RangosClinicos.FRECUENCIA_CARDIACA_MAX) int frecuenciaCardiaca,
+			@Schema(description = "Presión sistólica (mmHg)", example = "180", minimum = "" + RangosClinicos.PRESION_SISTOLICA_MIN, maximum = "" + RangosClinicos.PRESION_SISTOLICA_MAX) int presionSistolica,
+			@Schema(description = "Presión diastólica (mmHg)", example = "110", minimum = "" + RangosClinicos.PRESION_DIASTOLICA_MIN, maximum = "" + RangosClinicos.PRESION_DIASTOLICA_MAX) int presionDiastolica,
+			@Schema(description = "SpO2 (%)", example = "97", minimum = "" + RangosClinicos.SPO2_MIN, maximum = "" + RangosClinicos.SPO2_MAX) int spo2,
+			@Schema(description = "Temperatura (°C)", example = "36.8", minimum = "" + RangosClinicos.TEMPERATURA_MIN, maximum = "" + RangosClinicos.TEMPERATURA_MAX) double temperatura,
+			@Schema(description = "Dolor (" + RangosClinicos.DOLOR_MIN + "-" + RangosClinicos.DOLOR_MAX + ")", example = "8", minimum = "" + RangosClinicos.DOLOR_MIN, maximum = "" + RangosClinicos.DOLOR_MAX) int dolor,
+			@Schema(description = "Glasgow (" + RangosClinicos.GCS_MIN + "-" + RangosClinicos.GCS_MAX + ")", example = "15", minimum = "" + RangosClinicos.GCS_MIN, maximum = "" + RangosClinicos.GCS_MAX) int gcs) {
 
 		static SignosVitalesResponse desde(SignosVitales s) {
 			return new SignosVitalesResponse(s.frecuenciaCardiaca(), s.presionSistolica(), s.presionDiastolica(), s.spo2(),

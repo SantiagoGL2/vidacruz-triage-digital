@@ -10,7 +10,7 @@ import java.util.UUID;
 /** Respuesta del RF-01. */
 @Schema(description = "Paciente recién registrado y clasificado")
 public record PacienteCreadoResponse(
-		@Schema(description = "Identificador del paciente", example = EjemplosApi.ID_PACIENTE) UUID id,
+		@Schema(description = EjemplosApi.DESC_ID_PACIENTE, example = EjemplosApi.ID_PACIENTE) UUID id,
 		@Schema(description = "Nivel de triaje (RN-01)", example = ValoresApi.CRITICO,
 				allowableValues = {ValoresApi.CRITICO, ValoresApi.URGENTE, ValoresApi.URGENTE_2, ValoresApi.NO_URGENTE, ValoresApi.NO_URGENTE_2}) String nivel,
 		@Schema(description = "Equivalente numérico del nivel (1 = más grave)", example = "1", minimum = "1", maximum = "5") int nivelNumero,

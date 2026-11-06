@@ -55,7 +55,7 @@ class AlertaController {
 			@ApiResponse(responseCode = "401", description = "Falta el header `X-API-Key` o es invalido (la API key no se acepta por query string).",
 					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_401))),
-			@ApiResponse(responseCode = "500", description = "Error interno inesperado.",
+			@ApiResponse(responseCode = "500", description = EjemplosApi.DESC_500,
 					content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE, schema = @Schema(implementation = ProblemDetail.class),
 							examples = @ExampleObject(value = EjemplosApi.ERROR_500)))})
 	@GetMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

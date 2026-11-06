@@ -186,13 +186,31 @@ Dos instancias independientes — **`llm-chat`** y **`llm-embedding`** — con B
 
 | Mecanismo | Valor por defecto |
 |-----------|-------------------|
-| TimeLimiter | 20 s (`LLM_TIMEOUT`); el cliente HTTP corta a los 30 s |
-| Retry | 3 intentos, backoff exponencial ×2 desde 500 ms con jitter (30 %) |
-| Qué se reintenta | timeout, errores de conexión/E-S, 5xx y 429. **Nunca** 4xx de configuración (401, 400, 404…) ni errores de validación |
+| Read-timeout HTTP | 8 s (`LLM_HTTP_READ_TIMEOUT`); timeout de conexión 3 s (`LLM_HTTP_CONNECT_TIMEOUT`) |
+| TimeLimiter | 10 s (`LLM_TIMEOUT`), **siempre mayor** que el read-timeout HTTP (se valida al arrancar) |
+| Retry | 2 intentos (1 llamada + 1 reintento, `LLM_RETRY_MAX_ATTEMPTS`), backoff exponencial ×2 desde 500 ms con jitter (30 %) |
+| Qué se reintenta | errores de conexión/E-S, 5xx y 429. **Nunca** un timeout (de lectura o del TimeLimiter), ni 4xx de configuración (401, 400, 404…), ni errores de validación |
 | CircuitBreaker | ventana de 20 llamadas, mínimo 10, se abre con ≥ 50 % de fallos o lentas; 30 s abierto; 3 llamadas de prueba |
 | Bulkhead | 10 llamadas concurrentes por instancia; no espera |
 
 Los reintentos propios de Spring AI se desactivan (`spring.ai.retry.max-attempts=1`) para que no se multipliquen con los de Resilience4j.
+
+### Presupuesto de tiempo
+
+Cada consulta hace **dos** llamadas al proveedor, en serie: embeddings (búsqueda) y chat (respuesta). El tiempo máximo está acotado así:
+
+| Pieza | Regla | Por qué |
+|---|---|---|
+| Read-timeout HTTP (8 s) **<** TimeLimiter (10 s) | `PresupuestoTiempoLlmValidador` hace fallar el arranque si no se cumple | Si el TimeLimiter cortara primero, la llamada bloqueante seguiría ocupando un hilo de `boundedElastic` hasta su propio timeout HTTP con el cupo del Bulkhead ya liberado: el límite de concurrencia dejaría de ser real. Con el read-timeout menor el hilo termina solo y el TimeLimiter queda de red de seguridad |
+| Un timeout **no se reintenta** | `ErrorTransitorioProveedor` | Si el proveedor ya agotó el presupuesto, otro intento tarda lo mismo: solo duplicaría el peor caso |
+| 1 reintento (no 2) ante conexión, 5xx o 429 | `max-attempts: 2` | Suficiente para un fallo puntual; más intentos multiplican la espera con el médico delante |
+
+**Peor caso por operación** (chat o embedding): un timeout cuesta ≤ 10 s (un intento, sin reintento); un error reintentable que además es lento cuesta ≤ 2 × 10 s + espera del backoff (~0,5 s ± 30 %) ≈ **20,7 s**.
+**Peor caso por consulta** (embedding + chat): ≈ **41 s** si ambas operaciones agotan el reintento; con el circuito abierto (proveedor caído sostenido) las consultas responden `503` al instante.
+Quedan por debajo de los 60 s del Ingress (`proxy-read-timeout` del asistente), de modo que el médico siempre recibe el `503` del asistente y no un `504` del balanceador.
+
+Antes (read-timeout 30 s > TimeLimiter 20 s, 3 intentos, timeouts reintentables) el peor caso era ≈ 61 s por operación y ≈ 2 min por consulta, con hilos bloqueados hasta 30 s tras el corte.
+Todo se ajusta con variables de entorno (`LLM_HTTP_READ_TIMEOUT`, `LLM_TIMEOUT`, `LLM_RETRY_MAX_ATTEMPTS`, `LLM_HTTP_CONNECT_TIMEOUT`); si se sube un valor, hay que volver a hacer la cuenta y mantener read-timeout < TimeLimiter.
 
 **Fallback (modo degradado):** circuito abierto, timeout, reintentos agotados, bulkhead lleno o 4xx de configuración → `503` `application/problem+json` con
 `"El asistente clínico no está disponible temporalmente; consulte los protocolos impresos"` y `Retry-After`; aplica igual a embeddings y a chat (`"operacion": "chat" | "embedding"`).

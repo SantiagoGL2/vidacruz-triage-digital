@@ -38,6 +38,11 @@ data:
   LLM_BASE_URL: https://api.openai.com
   LLM_CHAT_MODEL: gpt-4o-mini
   LLM_EMBEDDING_MODEL: text-embedding-3-small
+  # Presupuesto de tiempo del proveedor (docs/asistente-rag.md): read-timeout HTTP < TimeLimiter; 1 reintento y nunca sobre un timeout.
+  LLM_HTTP_CONNECT_TIMEOUT: 3s
+  LLM_HTTP_READ_TIMEOUT: 8s
+  LLM_TIMEOUT: 10s
+  LLM_RETRY_MAX_ATTEMPTS: "2"
   # RAG: umbral medido con text-embedding-3-small (docs/asistente-rag.md). Si cambias de modelo, recalibra.
   ASSISTANT_RAG_TOP_K: "4"
   ASSISTANT_RAG_SIMILARITY_THRESHOLD: "0.75"

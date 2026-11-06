@@ -7,23 +7,32 @@ import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import java.io.IOException;
 import java.net.SocketTimeoutException;
+import java.net.http.HttpConnectTimeoutException;
+import java.net.http.HttpTimeoutException;
 import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.retry.NonTransientAiException;
 import org.springframework.ai.retry.TransientAiException;
 import org.springframework.web.client.ResourceAccessException;
 
-/** Solo se reintenta lo transitorio: timeout, conexion, 5xx y 429. Nunca 4xx de configuracion ni errores de validacion. */
+/** Solo se reintenta lo transitorio: conexion, 5xx y 429 (nunca un timeout de respuesta). Nunca 4xx de configuracion ni errores de validacion. */
 class ErrorTransitorioProveedorTests {
 
 	private final ErrorTransitorioProveedor predicado = new ErrorTransitorioProveedor();
 
 	@Test
-	void reintentaTimeoutsYErroresDeConexion() {
-		assertThat(predicado.test(new TimeoutException())).isTrue();
-		assertThat(predicado.test(new ResourceAccessException("I/O error", new SocketTimeoutException("Read timed out")))).isTrue();
+	void reintentaLosErroresDeConexion() {
+		assertThat(predicado.test(new ResourceAccessException("I/O error", new SocketTimeoutException("Connect timed out")))).isTrue();
+		assertThat(predicado.test(new ResourceAccessException("I/O error", new HttpConnectTimeoutException("HTTP connect timed out")))).isTrue();
 		assertThat(predicado.test(new ResourceAccessException("I/O error", new IOException("Connection refused")))).isTrue();
 		assertThat(predicado.test(new RuntimeException("envuelto", new IOException("reset")))).isTrue();
+	}
+
+	@Test
+	void nuncaReintentaUnTimeoutDeRespuesta() {
+		assertThat(predicado.test(new TimeoutException())).as("TimeLimiter").isFalse();
+		assertThat(predicado.test(new ResourceAccessException("I/O error", new SocketTimeoutException("Read timed out")))).isFalse();
+		assertThat(predicado.test(new ResourceAccessException("I/O error", new HttpTimeoutException("request timed out")))).isFalse();
 	}
 
 	@Test

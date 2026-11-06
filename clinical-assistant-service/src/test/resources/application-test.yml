@@ -17,7 +17,7 @@ spring:
       base-url: ${LLM_BASE_URL:http://localhost:9}      # los tests con proveedor simulado lo sustituyen
   http:
     client:
-      read-timeout: 6s
+      read-timeout: 1s     # < timelimiter (1500ms), como exige PresupuestoTiempoLlmValidador
 assistant:
   security:
     api-key: test-api-key
@@ -52,7 +52,7 @@ resilience4j:
   retry:
     configs:
       llm:
-        max-attempts: 3
+        max-attempts: 2
         wait-duration: 50ms
         exponential-backoff-multiplier: 1.5
   timelimiter:

@@ -30,7 +30,10 @@ spring:
     client:
       # Timeouts del cliente HTTP hacia el proveedor (RestClient de Spring AI): un hilo no queda colgado si el proveedor no responde
       connect-timeout: ${LLM_HTTP_CONNECT_TIMEOUT:3s}
-      read-timeout: ${LLM_HTTP_READ_TIMEOUT:30s}
+      # Presupuesto de tiempo (docs/asistente-rag.md): read-timeout HTTP < TimeLimiter. Asi el hilo bloqueante termina SOLO antes de que el
+      # TimeLimiter corte; si fuera al reves el hilo de boundedElastic seguiria ocupado con el cupo del Bulkhead ya liberado.
+      # Se valida al arrancar (PresupuestoTiempoLlmValidador).
+      read-timeout: ${LLM_HTTP_READ_TIMEOUT:8s}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -133,7 +136,7 @@ logging:
 
 # ---------------------------------------------------------------------------
 # Resilience4j sobre el proveedor LLM (instancia "llm"):
-# CircuitBreaker + Retry (solo transitorios: timeout, 5xx, 429 -> se fija por clase en codigo) + TimeLimiter + Bulkhead.
+# CircuitBreaker + Retry (solo transitorios: conexion, 5xx, 429; NO timeouts -> se fija por clase en codigo) + TimeLimiter + Bulkhead.
 # Fallback: HTTP 503 con mensaje claro (modo degradado).
 # ---------------------------------------------------------------------------
 resilience4j:
@@ -162,13 +165,14 @@ resilience4j:
   retry:
     configs:
       llm:
-        max-attempts: ${LLM_RETRY_MAX_ATTEMPTS:3}
+        max-attempts: ${LLM_RETRY_MAX_ATTEMPTS:2}   # 1 llamada + 1 reintento
         wait-duration: ${LLM_RETRY_WAIT:500ms}
         enable-exponential-backoff: true
         exponential-backoff-multiplier: 2
         enable-randomized-wait: true          # jitter
         randomized-wait-factor: 0.3
-        # solo transitorios: timeout, conexion/E-S, 5xx y 429. Nunca 4xx de configuracion ni errores de validacion
+        # solo transitorios: conexion/E-S, 5xx y 429. Nunca un timeout (si el proveedor tarda mas de lo presupuestado, otro intento tarda
+        # igual), ni 4xx de configuracion, ni errores de validacion
         retry-exception-predicate: com.vidacruz.assistant.infrastructure.drivenadapter.ai.resilience.ErrorTransitorioProveedor
     instances:
       llm-chat:
@@ -178,7 +182,7 @@ resilience4j:
   timelimiter:
     configs:
       llm:
-        timeout-duration: ${LLM_TIMEOUT:20s}
+        timeout-duration: ${LLM_TIMEOUT:10s}
         cancel-running-future: true
     instances:
       llm-chat:

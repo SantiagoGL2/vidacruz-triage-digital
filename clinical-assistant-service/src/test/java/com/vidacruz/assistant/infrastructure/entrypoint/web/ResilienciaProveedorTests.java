@@ -52,21 +52,19 @@ class ResilienciaProveedorTests extends AbstractIntegrationTest {
 	// ------------------------------------------------------------------ retry
 
 	@Test
-	void unProveedorQueDevuelve500DosVecesYLuego200ResponseBienPorElRetry() {
+	void unProveedorQueDevuelve500UnaVezYLuego200ResponseBienPorElRetry() {
 		var s = ProveedorLlmSimulado.servidor();
 		s.stubFor(post(urlEqualTo(ProveedorLlmSimulado.RUTA_CHAT)).atPriority(0).inScenario("retry")
 				.whenScenarioStateIs(Scenario.STARTED).willReturn(error(500)).willSetStateTo("fallo-1"));
 		s.stubFor(post(urlEqualTo(ProveedorLlmSimulado.RUTA_CHAT)).atPriority(0).inScenario("retry")
-				.whenScenarioStateIs("fallo-1").willReturn(error(500)).willSetStateTo("fallo-2"));
-		s.stubFor(post(urlEqualTo(ProveedorLlmSimulado.RUTA_CHAT)).atPriority(0).inScenario("retry")
-				.whenScenarioStateIs("fallo-2").willReturn(ProveedorLlmSimulado.chat(
+				.whenScenarioStateIs("fallo-1").willReturn(ProveedorLlmSimulado.chat(
 						ProveedorLlmSimulado.respondida("Vigilar signos de encefalopatía.", "PROTO-001", "Medidas iniciales"))));
 
 		consultar().expectStatus().isOk().expectBody()
 				.jsonPath("$.respuesta").isEqualTo("Vigilar signos de encefalopatía.")
 				.jsonPath("$.fuentes[0].protocolo").isEqualTo("PROTO-001");
 
-		assertThat(ProveedorLlmSimulado.llamadasChat()).isEqualTo(3);
+		assertThat(ProveedorLlmSimulado.llamadasChat()).isEqualTo(2);
 		assertThat(circuitos.circuitBreaker("llm-chat").getState()).isEqualTo(CircuitBreaker.State.CLOSED);
 	}
 
@@ -99,9 +97,9 @@ class ResilienciaProveedorTests extends AbstractIntegrationTest {
 	void conElProveedorCaidoResponde503ConMensajeClaroYElCircuitBreakerSeAbre() {
 		chatSiempre(error(500));
 
-		esperar503Degradado(consultar());                       // 3 intentos fallidos (max-attempts = 3)
-		assertThat(ProveedorLlmSimulado.llamadasChat()).isEqualTo(3);
-		esperar503Degradado(consultar());                       // el 4.º fallo abre el circuito; el reintento ya no llama
+		esperar503Degradado(consultar());                       // 2 intentos fallidos (max-attempts = 2)
+		assertThat(ProveedorLlmSimulado.llamadasChat()).isEqualTo(2);
+		esperar503Degradado(consultar());                       // el 4.º fallo abre el circuito
 		assertThat(circuitos.circuitBreaker("llm-chat").getState()).isEqualTo(CircuitBreaker.State.OPEN);
 		int llamadasConElCircuitoAbierto = ProveedorLlmSimulado.llamadasChat();
 
@@ -145,14 +143,17 @@ class ResilienciaProveedorTests extends AbstractIntegrationTest {
 	// ------------------------------------------------------------------ timeout
 
 	@Test
-	void unTimeoutDelProveedorResponde503() {
+	void unProveedorLentoResponde503EnUnTiempoAcotadoYElTimeoutNoSeReintenta() {
+		// respuesta a los 4 s: el read-timeout (1 s en test) corta antes que el TimeLimiter (1,5 s)
 		chatSiempre(ProveedorLlmSimulado.chat("{\"respondida\":false,\"respuesta\":\"\",\"citas\":[]}").withFixedDelay(4000));
 
 		long inicio = System.nanoTime();
 		esperar503Degradado(consultar());
-		long segundos = (System.nanoTime() - inicio) / 1_000_000_000L;
+		long milisegundos = (System.nanoTime() - inicio) / 1_000_000L;
 
-		assertThat(segundos).as("responde por el time limiter, no esperando al proveedor indefinidamente").isLessThan(20);
+		assertThat(milisegundos).as("acotado por el presupuesto (un solo intento), no por los 4 s del proveedor ni por un reintento")
+				.isLessThan(3500);
+		assertThat(ProveedorLlmSimulado.llamadasChat()).as("un timeout no se reintenta").isEqualTo(1);
 	}
 
 	// ------------------------------------------------------------------ embeddings

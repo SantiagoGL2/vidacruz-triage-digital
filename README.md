@@ -1,13 +1,13 @@
 # VidaCruz Triage Digital
 
-![Java 21](https://img.shields.io/badge/Java-21-orange) ![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F) ![WebFlux](https://img.shields.io/badge/Spring-WebFlux%20%2B%20R2DBC-6DB33F) ![Kafka](https://img.shields.io/badge/Kafka-KRaft-231F20) ![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-336791) ![Redis Stack](https://img.shields.io/badge/Redis-Stack-DC382D) ![Azure AKS](https://img.shields.io/badge/Azure-AKS-0078D4) [![CI](https://github.com/SantiagoGL2/vidacruz-triage-digital/actions/workflows/ci.yml/badge.svg)](https://github.com/SantiagoGL2/vidacruz-triage-digital/actions/workflows/ci.yml) ![Tests](https://img.shields.io/badge/tests-482-brightgreen) ![Cobertura de lineas](https://img.shields.io/badge/cobertura%20(lineas)-95%25-brightgreen)
+![Java 21](https://img.shields.io/badge/Java-21-orange) ![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F) ![WebFlux](https://img.shields.io/badge/Spring-WebFlux%20%2B%20R2DBC-6DB33F) ![Kafka](https://img.shields.io/badge/Kafka-KRaft-231F20) ![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-336791) ![Redis Stack](https://img.shields.io/badge/Redis-Stack-DC382D) ![Azure AKS](https://img.shields.io/badge/Azure-AKS-0078D4) ![Tests](https://img.shields.io/badge/tests-482-brightgreen) ![Cobertura de lineas](https://img.shields.io/badge/cobertura%20(lineas)-95%25-brightgreen)
 
 Sistema de triaje digital para las urgencias de VidaCruz, hecho con dos microservicios reactivos (Spring WebFlux, R2DBC, Kafka):
 
 * **`triage-service`** registra pacientes con sus signos vitales, los **clasifica por reglas objetivas** (RN-01), vigila el SLA y **escala automáticamente** a quien lo supera (RF-03), **audita** cada cambio (RN-04), reporta la operación por hora con **SQL avanzado** (RF-05), alerta al equipo médico (RF-06) y publica eventos a Kafka con *Transactional Outbox*.
 * **`clinical-assistant-service`** responde preguntas sobre protocolos clínicos con **RAG y cita obligatoria, sin inventar contenido** (RN-05) y mantiene en Redis el estado de urgencias en tiempo real a partir de los eventos de Kafka. **El triaje nunca depende de la disponibilidad del asistente.**
 
-**Índice:** [1. Probar en Azure](#1-probar-en-azure) · [2. Ejecutar en local](#2-ejecutar-en-local-con-un-solo-comando) · [3. Arquitectura](#3-arquitectura) · [4. Requerimientos](#4-cómo-se-cumple-cada-requerimiento) · [5. Decisiones (ADR)](#5-decisiones-clave) · [6. Resiliencia](#6-resiliencia) · [7. IA / RAG](#7-ia--rag) · [8. Seguridad](#8-seguridad) · [9. Observabilidad](#9-observabilidad) · [10. Pruebas](#10-pruebas) · [11. Azure](#11-despliegue-en-azure) · [12. Limitaciones](#12-limitaciones-conocidas-y-siguientes-pasos) · [13. Supuestos](#13-supuestos) · [14. Uso de IA](#14-uso-de-ia-en-el-desarrollo)
+**Índice:** [1. Probar en Azure](#1-probar-en-azure) · [2. Ejecutar en local](#2-ejecutar-en-local-con-un-solo-comando) · [3. Arquitectura](#3-arquitectura) · [4. Requerimientos](#4-cómo-se-cumple-cada-requerimiento) · [5. Decisiones (ADR)](#5-decisiones-clave) · [6. Resiliencia](#6-resiliencia) · [7. IA / RAG](#7-ia--rag) · [8. Seguridad](#8-seguridad) · [9. Observabilidad](#9-observabilidad) · [10. Pruebas](#10-pruebas) · [11. Azure](#11-despliegue-en-azure) · [12. Limitaciones](#12-limitaciones-conocidas-y-siguientes-pasos) · [13. Supuestos](#13-supuestos) · [14. Uso de IA](#14-uso-de-ia-en-el-desarrollo) · [15. Tecnologías utilizadas](#15-tecnologías-utilizadas)
 
 **¿Cómo verifico que se cumple todo el enunciado?** [`docs/trazabilidad.md`](docs/trazabilidad.md): cada requerimiento → dónde está implementado → qué pruebas lo verifican, más una sección de **brechas** conocidas. Cobertura: [`docs/cobertura.md`](docs/cobertura.md) · Trazas y métricas: [`docs/observabilidad.md`](docs/observabilidad.md).
 
@@ -410,7 +410,30 @@ Ejecución: ver [sección 2](#2-ejecutar-en-local-con-un-solo-comando) (`./gradl
 | `triage-service` | **96.8 %** | **81.1 %** | ≥ 92 % / ≥ 76 % | 98.2 % | 95.5 % |
 | `clinical-assistant-service` | **95.5 %** | **78.0 %** | ≥ 91 % / ≥ 73 % | 96.9 % | 97.1 % |
 
-**CI:** [`ci.yml`](.github/workflows/ci.yml) ejecuta `./gradlew check` por servicio en cada push y PR a `main` (Testcontainers en `ubuntu-latest`) y sube los reportes de tests y cobertura como artefactos.
+**Pipeline (CI):** está definido en [`.github/workflows/`](.github/workflows/): [`ci.yml`](.github/workflows/ci.yml) (push y PR a `development` y `main`) con tres jobs —
+`check` (`./gradlew check` por servicio: tests + cobertura con umbral), `manifiestos` (`docker compose config` y **kubeconform** sobre los manifests de Kubernetes) y `secretos`
+(**gitleaks** sobre todo el historial)—, y [`deploy.yml`](.github/workflows/deploy.yml) (despliegue manual). **No pudo ejecutarse en GitHub**: la cuenta tiene GitHub Actions
+bloqueado por un problema de facturación ajeno al proyecto (por eso no hay badge de estado). Cada comprobación se **validó en local, sin fallos ni hallazgos**
+(482 tests en verde, cobertura sobre el umbral, manifests válidos y 25 commits sin secretos). Para reproducirlo:
+
+```bash
+# job check: tests + cobertura (Docker en marcha, por Testcontainers)
+(cd triage-service && ./gradlew check) && (cd clinical-assistant-service && ./gradlew check)
+
+# job manifiestos: compose (con valores de relleno, como en el CI) y manifests de Kubernetes
+export POSTGRES_PASSWORD=ci REDIS_PASSWORD=ci TRIAGE_API_KEY=ci ASSISTANT_API_KEY=ci LLM_API_KEY=ci
+docker compose config --quiet && docker compose --profile observabilidad config --quiet
+SCHEMAS=(-schema-location default -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json')
+for d in k8s/base k8s/overlays/azure k8s/platform/ingress-nginx; do
+  kubectl kustomize "$d" | kubeconform -strict -summary -kubernetes-version 1.33.0 "${SCHEMAS[@]}" -
+done
+kubeconform -strict -summary -kubernetes-version 1.33.0 "${SCHEMAS[@]}" k8s/platform/cert-manager/cluster-issuers.yaml k8s/secret.example.yaml
+
+# job secretos: todo el historial de git
+gitleaks detect --source . --redact --no-banner --log-opts="--all"
+```
+
+(`kubeconform` y `gitleaks` son binarios sueltos: [kubeconform v0.8.0](https://github.com/yannh/kubeconform/releases/tag/v0.8.0) y [gitleaks v8.30.1](https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1), las versiones del CI. En PowerShell, las variables se asignan con `$env:NOMBRE = 'ci'`.)
 
 ---
 
@@ -437,6 +460,7 @@ Coste ≈ **6 USD/día** encendido (≈ 183 USD/mes). Arquitectura, costos, paso
 | **`ingress-nginx` está retirado por la comunidad de Kubernetes** (repositorio archivado en marzo de 2026): la versión usada (1.15.1) funciona pero **no recibirá parches de seguridad**. | Pasar a una implementación de Gateway API (Envoy Gateway, Cilium, Traefik o la de AKS) manteniendo cert-manager ([ADR 0009](docs/adr/0009-https-con-ingress-nginx-y-cert-manager.md)). |
 | **Sin NetworkPolicy**: cualquier pod del clúster puede hablar con cualquier otro (p. ej. con Postgres, Redis o Kafka). El clúster de prueba se creó sin motor de políticas de red y activarlo exige **recrear el clúster**. | Crear el AKS con Azure Network Policy o Cilium y aplicar políticas de denegación por defecto + reglas explícitas (apps → datos, ingreso → apps). |
 | **Sin dashboard de métricas**: las métricas existen en `/actuator/prometheus` pero no hay Prometheus ni Grafana desplegados. | Dashboard de Grafana sobre esas métricas (clasificación por nivel, escalamientos, latencia del LLM, cola del outbox) con alertas, p. ej. con Azure Managed Prometheus y Grafana. |
+| **El pipeline de CI/CD no ha corrido en GitHub**: la cuenta tiene GitHub Actions bloqueado por facturación (ajeno al proyecto), así que no hay badge ni ejecuciones. Los workflows de [`.github/workflows/`](.github/workflows/) (tests, cobertura, kubeconform y gitleaks) se validaron en local sin fallos ni hallazgos; comandos en la [sección 10](#10-pruebas). | Desbloquear la facturación y comprobar la primera ejecución en `development`; después, la identidad federada para `deploy.yml`. |
 | **Datos dentro del clúster, un nodo, una réplica, sin backups ni alta disponibilidad**; borrar el grupo destruye los datos. Una actualización de AKS no cabe en la cuota (necesita un nodo extra). | PostgreSQL Flexible Server, Event Hubs con API Kafka y Azure Managed Redis, con varias réplicas ([ADR 0008](docs/adr/0008-despliegue-en-aks.md)). |
 | **ACR Tasks está bloqueado en la suscripción de prueba**: las imágenes se construyen con Docker local (o en el runner de GitHub con `deploy.yml`, que **todavía no se ha ejecutado**: falta crear la identidad federada). Tampoco se pudo usar `Standard_B4ms` (AKS la rechaza); se usa `Standard_D4s_v4`. | Las imágenes las construye y publica el pipeline de CI con identidad federada. |
 | **Swagger UI y el health detallado están encendidos en Azure** para poder probar; el detalle del índice incluye el mensaje de error del proveedor (visible solo con API key). | `SWAGGER_HABILITADO=false` y detalles de salud restringidos. |
@@ -446,7 +470,7 @@ Coste ≈ **6 USD/día** encendido (≈ 183 USD/mes). Arquitectura, costos, paso
 | **La vista de urgencias se reconstruye desde el inicio del topic**: depende de que `triaje.eventos` retenga los eventos de los pacientes activos (la retención por defecto de Kafka es de 7 días). | Fijar la retención o *compaction* según el flujo real ([supuesto 83](docs/supuestos.md)). |
 | **Privacidad:** el texto de la pregunta del médico se envía al proveedor de IA externo; no se envían datos de pacientes, pero una pregunta libre podría contenerlos. | Proveedor con acuerdo de tratamiento de datos o modelo alojado; filtrado de datos personales en la entrada. |
 
-Brechas de prueba conocidas (p. ej. no hay una prueba automática de punta a punta con los dos servicios, ni validación automática de `docker-compose` y de los manifests de Kubernetes): [`docs/trazabilidad.md`](docs/trazabilidad.md#brechas).
+Brechas de prueba conocidas (p. ej. no hay una prueba automática de punta a punta con los dos servicios; la validación de `docker-compose` y de los manifests ya existe en el CI, pero este no ha podido ejecutarse en GitHub): [`docs/trazabilidad.md`](docs/trazabilidad.md#brechas).
 
 Siguientes pasos naturales: crear la identidad federada y ejecutar el despliegue continuo, observabilidad en producción (Prometheus/Grafana, trazas OTLP), autenticación con Entra ID y roles, más protocolos en el corpus y listados/paginación de pacientes.
 
@@ -468,3 +492,35 @@ Todos los supuestos están numerados en [`docs/supuestos.md`](docs/supuestos.md)
 ## 14. Uso de IA en el desarrollo
 
 Se usó **Claude Code** como asistente de programación, guiado por [`CLAUDE.md`](CLAUDE.md), que fija el problema, la arquitectura y las reglas de trabajo (hexagonal verificada con ArchUnit, 100 % reactivo, commits pequeños, tests obligatorios, sin secretos). Las decisiones de arquitectura (los ADR) las tomó y revisó el autor; la IA ayudó a implementarlas, a probarlas (incluida la validación contra el proveedor de LLM real y el despliegue en Azure) y a documentarlas. El código y los tests son la evidencia: el sistema se verifica con la suite automatizada y con las pruebas contra el entorno desplegado descritas arriba.
+
+---
+
+## 15. Tecnologías utilizadas
+
+Versiones tomadas de los `build.gradle` (y de las que gestiona Spring Boot 3.5.16 en ambos servicios), `docker-compose.yml`, `k8s/` e `infra/`.
+
+| Tecnología | Versión | Para qué se usa |
+|---|---|---|
+| **Java** | 21 (toolchain; imagen `eclipse-temurin:21`) | Lenguaje de ambos servicios (records, inmutabilidad) |
+| **Gradle** | 9.8.2 (wrapper, DSL Groovy) | Construcción independiente de cada servicio |
+| **Spring Boot** | 3.5.16 | Base de los dos microservicios (Security, Validation, Actuator) |
+| **Spring WebFlux** | 6.2.19 (Spring Framework) | API REST reactiva y SSE de alertas |
+| **Project Reactor** | 3.7.19 | `Mono`/`Flux`: todo el flujo sin bloquear el event loop |
+| **R2DBC + PostgreSQL** | `r2dbc-postgresql` 1.0.9 · PostgreSQL **16** (`postgres:16-alpine`) | Persistencia reactiva de pacientes, auditoría y outbox; SQL avanzado del reporte (RF-05) |
+| **Flyway** | 11.7.2 | Migraciones de esquema (inmutables) al arrancar |
+| **Spring Kafka / Apache Kafka (KRaft)** | spring-kafka 3.3.16 · cliente 3.9.2 · broker `apache/kafka:3.9.1` (sin ZooKeeper) | Eventos `triaje.eventos`, outbox transaccional, consumidores y DLT |
+| **Redis Stack** | `redis/redis-stack-server:7.4.0-v3` (Lettuce 6.6.0) | Vector store del RAG y vista de estado de urgencias en tiempo real |
+| **Spring AI + OpenAI** | Spring AI 1.1.8 (`spring-ai-starter-model-openai`, `spring-ai-starter-vector-store-redis`) | Embeddings y chat del asistente (RAG con cita obligatoria) |
+| **Resilience4j** | 2.4.0 | CircuitBreaker, Retry, TimeLimiter y Bulkhead sobre el LLM; RateLimiter de las consultas |
+| **Micrometer / Prometheus** | Micrometer 1.15.12 · `micrometer-registry-prometheus` | Métricas de negocio y técnicas en `/actuator/prometheus` |
+| **OpenTelemetry / Jaeger** | OpenTelemetry 1.49.0 (Micrometer Tracing) · `jaegertracing/all-in-one:1.65.0` | Trazas distribuidas (`traceparent` por Kafka y outbox); Jaeger con el perfil `observabilidad` |
+| **springdoc-openapi** | 2.8.13 | Swagger UI y contrato OpenAPI de ambos servicios |
+| **JUnit 5 · Testcontainers · WireMock** | JUnit 5.12.2 · Testcontainers 2.0.5 · WireMock 3.13.2 | Tests unitarios y de integración (PostgreSQL, Kafka, Redis reales; LLM simulado) |
+| **ArchUnit · BlockHound · JaCoCo** | ArchUnit 1.4.1 · BlockHound 1.0.18 · JaCoCo 0.8.13 | Reglas de arquitectura hexagonal, detección de llamadas bloqueantes y cobertura con umbral |
+| **Docker / Docker Compose** | Imágenes multi-stage (JRE 21 Alpine, usuario no root) | Toda la plataforma con un solo comando |
+| **Kubernetes / Kustomize** | Manifests validados contra el esquema 1.33 (kubeconform 0.8.0) | Despliegue (base + overlay de Azure + plataforma de ingreso) |
+| **Azure AKS / ACR** | 1 nodo `Standard_D4s_v4`; ACR para las imágenes | Clúster y registro donde corre el entorno de prueba |
+| **Bicep** | Plantillas en `infra/` | Infraestructura como código (grupo de recursos, ACR, AKS) |
+| **ingress-nginx** | 1.15.1 (archivado upstream; ver [limitaciones](#12-limitaciones-conocidas-y-siguientes-pasos)) | Ingress con TLS y redirección HTTP → HTTPS |
+| **cert-manager** | 1.21.3 (Let's Encrypt, HTTP-01) | Emisión y renovación automática de los certificados |
+| **gitleaks** | 8.30.1 (CI) | Búsqueda de secretos en todo el historial |

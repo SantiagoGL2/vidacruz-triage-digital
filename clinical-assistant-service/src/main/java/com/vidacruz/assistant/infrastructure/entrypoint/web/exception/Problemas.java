@@ -2,7 +2,7 @@ package com.vidacruz.assistant.infrastructure.entrypoint.web.exception;
 
 import com.vidacruz.assistant.infrastructure.entrypoint.web.filter.CorrelationIdWebFilter;
 import java.net.URI;
-import java.time.Instant;
+import java.time.Clock;
 import java.util.List;
 import java.util.Locale;
 import org.springframework.context.MessageSource;
@@ -24,9 +24,11 @@ public class Problemas {
 	}
 
 	private final MessageSource mensajes;
+	private final Clock clock;
 
-	Problemas(MessageSource mensajes) {
+	Problemas(MessageSource mensajes, Clock clock) {
 		this.mensajes = mensajes;
+		this.clock = clock;
 	}
 
 	/** Error del catalogo con su mensaje ({@code error.<codigo>.mensaje}) y los argumentos dados. */
@@ -59,14 +61,14 @@ public class Problemas {
 		return mensajes.getMessage(clave, argumentos, locale != null ? locale : Locale.getDefault());
 	}
 
-	private static ProblemDetail construir(HttpStatusCode status, URI tipo, String titulo, String detalle,
+	private ProblemDetail construir(HttpStatusCode status, URI tipo, String titulo, String detalle,
 			ServerWebExchange exchange) {
 		ProblemDetail problema = ProblemDetail.forStatusAndDetail(status, detalle);
 		problema.setType(tipo);
 		problema.setTitle(titulo);
 		problema.setInstance(URI.create(exchange.getRequest().getPath().value()));
 		problema.setProperty(PropiedadesProblema.CORRELATION_ID, CorrelationIdWebFilter.de(exchange));
-		problema.setProperty(PropiedadesProblema.TIMESTAMP, Instant.now());
+		problema.setProperty(PropiedadesProblema.TIMESTAMP, clock.instant());
 		return problema;
 	}
 

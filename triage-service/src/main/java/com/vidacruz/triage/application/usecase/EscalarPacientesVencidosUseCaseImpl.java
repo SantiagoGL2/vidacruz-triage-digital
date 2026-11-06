@@ -15,6 +15,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -54,7 +55,7 @@ public class EscalarPacientesVencidosUseCaseImpl implements EscalarPacientesVenc
 			Instant ahora = clock.instant();
 			// Se leen primero todos los ids (se libera la conexion) y luego cada paciente abre su propia transaccion.
 			return pacientes.buscarIdsConSlaVencido(ahora, lote).collectList()
-					.flatMapMany(reactor.core.publisher.Flux::fromIterable)
+					.flatMapMany(Flux::fromIterable)
 					.concatMap(id -> escalar(id, ahora))
 					.collectList()
 					.map(resultados -> resumir(resultados.stream().map(Resultado::estado).toList()));
